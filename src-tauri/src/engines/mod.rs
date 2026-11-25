@@ -1,3 +1,5 @@
+pub mod mupdf;
+
 use serde::Serialize;
 
 #[derive(Clone, Copy, Debug, Serialize, PartialEq)]
@@ -34,9 +36,10 @@ pub struct Link {
     pub uri: Option<String>,
 }
 
-pub struct Rgb {
+pub struct Bgr {
     pub width: u32,
     pub height: u32,
+    pub stride: usize,
     pub pixels: Vec<u8>,
 }
 
@@ -61,7 +64,7 @@ pub trait PagedEngine: Sized {
     fn open(path: &std::path::Path, password: Option<&str>) -> Result<Self, OpenError>;
     fn page_count(&self) -> usize;
     fn page_size(&self, page: usize) -> PageSize;
-    fn render_tile(&self, page: usize, scale: f32, tile: Rect) -> Result<Rgb, String>;
+    fn render_tile(&self, page: usize, scale: f32, tile: Rect) -> Result<Bgr, String>;
     fn text(&self, page: usize) -> Vec<TextLine>;
     fn links(&self, page: usize) -> Vec<Link>;
     fn outline(&self) -> Vec<OutlineItem>;
