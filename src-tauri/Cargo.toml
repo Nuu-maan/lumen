@@ -25,6 +25,10 @@ cfb = "0.16"
 parking_lot = "0.12"
 lru = { version = "0.16", default-features = false }
 tokio = { version = "1", features = ["sync"] }
+memmap2 = "0.9"
+regex = "1"
+pulldown-cmark = { version = "0.13", default-features = false, features = ["html"] }
+mail-parser = "1"
 mupdf = { git = "https://github.com/messense/mupdf-rs", rev = "80e7792bc1b1b620fa03816fccf02ab4b7db7a1b", default-features = false, features = ["xps", "svg", "cbz", "img", "html", "epub", "base14-fonts"] }
 
 [profile.release]

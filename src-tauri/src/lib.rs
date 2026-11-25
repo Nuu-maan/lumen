@@ -1,12 +1,12 @@
 pub mod docs;
 pub mod engines;
 pub mod formats;
+pub mod open;
 pub mod render;
 pub mod sniff;
 
-use docs::{OpenPagedResult, Registry};
+use docs::{Doc, Registry};
 use engines::{Link, OutlineItem, PagedEngine, Rect, TextLine};
-use formats::{Engine, Format};
 use serde::Serialize;
 use std::path::PathBuf;
 use std::sync::atomic::Ordering;
@@ -20,54 +20,27 @@ struct Launch(Instant);
 
 type Reg<'a> = State<'a, Arc<Registry>>;
 
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct FileInfo {
-    path: String,
-    name: String,
-    size: u64,
-    format: &'static Format,
-}
-
-#[derive(Serialize)]
-#[serde(tag = "kind", rename_all = "camelCase")]
-enum Opened {
-    Paged {
-        file: FileInfo,
-        engine: &'static str,
-        #[serde(flatten)]
-        result: OpenPagedResult,
-    },
-    Unsupported {
-        file: Option<FileInfo>,
-        message: String,
-    },
-}
-
-fn file_info(path: &std::path::Path, format: &'static Format) -> FileInfo {
-    FileInfo {
-        path: path.to_string_lossy().into_owned(),
-        name: path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default(),
-        size: std::fs::metadata(path).map(|m| m.len()).unwrap_or(0),
-        format,
-    }
+#[tauri::command]
+async fn open_document(reg: Reg<'_>, path: String, password: Option<String>) -> Result<open::Opened, String> {
+    Ok(open::open(&reg, PathBuf::from(path), password).await)
 }
 
 #[tauri::command]
-async fn open_document(reg: Reg<'_>, path: String, password: Option<String>) -> Result<Opened, String> {
-    let path = PathBuf::from(path);
-    let sniffed = match sniff::sniff(&path) {
-        Ok(Some(s)) => s,
-        Ok(None) => {
-            return Ok(Opened::Unsupported { file: None, message: "Lumen doesn't recognize this file type.".into() })
-        }
-        Err(e) => return Ok(Opened::Unsupported { file: None, message: format!("Couldn't read the file: {e}") }),
-    };
-    let file = file_info(&path, sniffed.format);
-    match sniffed.format.engine {
-        Engine::Mupdf => Ok(Opened::Paged { file, engine: "Exact", result: reg.open_paged(path, password).await }),
-        _ => Ok(Opened::Unsupported { file: Some(file), message: "Support for this format is coming in a later build.".into() }),
-    }
+async fn text_lines(reg: Reg<'_>, doc: u32, start: usize, count: usize) -> Result<engines::text::Lines, String> {
+    let d = reg.text(doc).ok_or("document is closed")?;
+    Ok(reg.scheduler.run(render::PRIO_VISIBLE, move || d.lines(start, count.min(2000))).await)
+}
+
+#[tauri::command]
+async fn text_search(reg: Reg<'_>, doc: u32, needle: String) -> Result<Vec<(usize, usize)>, String> {
+    let d = reg.text(doc).ok_or("document is closed")?;
+    Ok(reg.scheduler.run(render::PRIO_NEAR, move || d.search(&needle, 50_000)).await)
+}
+
+#[tauri::command]
+async fn extract_item(reg: Reg<'_>, doc: u32, index: usize) -> Result<String, String> {
+    let reg = reg.inner().clone();
+    reg.clone().scheduler.run(render::PRIO_VISIBLE, move || open::extract(&reg, doc, index).map(|p| p.to_string_lossy().into_owned())).await
 }
 
 #[tauri::command]
@@ -166,6 +139,15 @@ fn respond(status: StatusCode, content_type: &str, body: Vec<u8>) -> Response<Ve
 fn handle_protocol(reg: &Arc<Registry>, path: &str, responder: tauri::UriSchemeResponder) {
     let not_found = || respond(StatusCode::NOT_FOUND, "text/plain", Vec::new());
     let Some((id, request)) = docs::parse_tile_path(path) else { return responder.respond(not_found()) };
+    if let docs::TileRequest::File = request {
+        let Some(Doc::File(file, mime)) = reg.get(id) else { return responder.respond(not_found()) };
+        return reg.scheduler.submit(render::PRIO_VISIBLE, move || {
+            responder.respond(match std::fs::read(&file) {
+                Ok(bytes) => respond(StatusCode::OK, mime, bytes),
+                Err(_) => not_found(),
+            })
+        });
+    }
     let Some(doc) = reg.paged(id) else { return responder.respond(not_found()) };
     let Some((prio, job)) = docs::render_request(&doc, request, None) else {
         return responder.respond(respond(StatusCode::NO_CONTENT, "text/plain", Vec::new()));
@@ -198,6 +180,9 @@ pub fn run() {
             handle_protocol(&protocol_registry, request.uri().path(), responder)
         })
         .setup(|app| {
+            if let Ok(dir) = app.path().app_cache_dir() {
+                let _ = app.state::<Arc<Registry>>().cache_dir.set(dir);
+            }
             let window = tauri::window::WindowBuilder::new(app, "main")
                 .title("Lumen")
                 .inner_size(1200.0, 820.0)
@@ -222,6 +207,9 @@ pub fn run() {
             bench_mark,
             open_document,
             close_document,
+            text_lines,
+            text_search,
+            extract_item,
             set_viewport,
             page_text,
             page_links,
