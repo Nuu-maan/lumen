@@ -53,6 +53,8 @@ def convert(desktop, request):
     if doc is None:
         raise RuntimeError("load failed")
     try:
+        if doc.supportsService("com.sun.star.text.TextDocument"):
+            doc.setPropertyValue("RedlineDisplayType", 0)
         export = next((f for service, f in FILTERS if doc.supportsService(service)), "writer_pdf_Export")
         doc.storeToURL(uno.systemPathToFileUrl(request["out"]), (prop("FilterName", export),))
     finally:
