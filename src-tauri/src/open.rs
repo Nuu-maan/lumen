@@ -1,6 +1,7 @@
 use crate::docs::{Doc, OpenPagedResult, Registry};
 use crate::engines::text::{Lines, TextDoc};
-use crate::engines::{archive, email, markup};
+use crate::engines::office::{self, ConvertError, Converter};
+use crate::engines::{archive, email, fast, markup};
 use crate::formats::{Engine, Format};
 use crate::render;
 use crate::sniff;
@@ -26,6 +27,8 @@ pub enum Opened {
     Paged {
         file: FileInfo,
         engine: &'static str,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        notes: Option<Vec<String>>,
         #[serde(flatten)]
         result: OpenPagedResult,
     },
@@ -38,6 +41,12 @@ pub enum Opened {
     Html {
         file: FileInfo,
         html: String,
+    },
+    Office {
+        file: FileInfo,
+        fast: Option<fast::Fast>,
+        encrypted: bool,
+        converter: Converter,
     },
     Email {
         file: FileInfo,
@@ -94,7 +103,19 @@ fn language_for(path: &Path, format: &Format) -> String {
     }
 }
 
-pub async fn open(reg: &Arc<Registry>, path: PathBuf, password: Option<String>) -> Opened {
+pub fn pick_converter(prefer_ms_office: bool) -> Converter {
+    if prefer_ms_office && office::ms_office_installed() {
+        Converter::MsOffice
+    } else {
+        Converter::LibreOffice
+    }
+}
+
+fn converted_path(reg: &Registry, key: &str) -> PathBuf {
+    reg.cache_root().join("converted").join(format!("{key}.pdf"))
+}
+
+pub async fn open(reg: &Arc<Registry>, path: PathBuf, password: Option<String>, prefer_ms_office: bool) -> Opened {
     let sniffed = match sniff::sniff(&path) {
         Ok(Some(s)) => s,
         Ok(None) => return unsupported(None, "Lumen doesn't recognize this file type. Try opening it with the app that created it."),
@@ -103,7 +124,7 @@ pub async fn open(reg: &Arc<Registry>, path: PathBuf, password: Option<String>) 
     let format = sniffed.format;
     let file = file_info(&path, format);
     match format.engine {
-        Engine::Mupdf => Opened::Paged { file, engine: "Exact", result: reg.open_paged(path, password).await },
+        Engine::Mupdf => Opened::Paged { file, engine: "Exact", notes: None, result: reg.open_paged(path, password).await },
         Engine::Text => {
             let opened = reg.scheduler.run(render::PRIO_VISIBLE, {
                 let path = path.clone();
@@ -153,7 +174,36 @@ pub async fn open(reg: &Arc<Registry>, path: PathBuf, password: Option<String>) 
                 Err(e) => unsupported(Some(file), e),
             }
         }
-        Engine::Office | Engine::Sheet => unsupported(Some(file), "Support for this format is coming in a later build."),
+        Engine::Office => {
+            let converter = pick_converter(prefer_ms_office);
+            let id = format.id;
+            let encrypted = sniffed.encrypted;
+            let (key, fast) = reg
+                .scheduler
+                .run(render::PRIO_VISIBLE, {
+                    let path = path.clone();
+                    let cache = reg.cache_root().join("converted");
+                    move || {
+                        let key = office::content_key(&path, converter).ok();
+                        let cached = key.as_ref().is_some_and(|k| cache.join(format!("{k}.pdf")).exists());
+                        let fast = match id {
+                            _ if encrypted => None,
+                            "docx" if cached => None,
+                            "docx" => fast::docx(&path),
+                            "pptx" => fast::pptx(&path),
+                            _ => None,
+                        };
+                        (key, fast)
+                    }
+                })
+                .await;
+            if let Some(cached) = key.map(|k| converted_path(reg, &k)).filter(|p| p.exists()) {
+                let notes = fast.map(|f| f.notes).filter(|n| !n.is_empty());
+                return Opened::Paged { file, engine: converter.label(), notes, result: reg.open_paged(cached, None).await };
+            }
+            Opened::Office { file, fast, encrypted, converter }
+        }
+        Engine::Sheet => unsupported(Some(file), "Support for this format is coming in a later build."),
     }
 }
 
@@ -170,5 +220,33 @@ pub fn extract(reg: &Registry, doc: u32, index: usize) -> Result<PathBuf, String
             Ok(target)
         }
         _ => Err("This file has nothing to extract.".into()),
+    }
+}
+
+const CONVERT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(60);
+
+pub async fn exact(reg: &Arc<Registry>, path: PathBuf, password: Option<String>, converter: Converter) -> Result<OpenPagedResult, String> {
+    let office = reg.office().clone();
+    let out_dir = reg.cache_root().join("converted");
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        let key = office::content_key(&path, converter).map_err(|e| ConvertError::Failed(e.to_string()))?;
+        std::fs::create_dir_all(&out_dir).map_err(|e| ConvertError::Failed(e.to_string()))?;
+        let target = out_dir.join(format!("{key}.pdf"));
+        let partial = out_dir.join(format!("{key}.{}.partial.pdf", std::process::id()));
+        let converted = match (converter, password.as_deref()) {
+            (Converter::MsOffice, None) => office.convert_ms_office(&path, &partial, CONVERT_TIMEOUT),
+            (_, password) => office.convert_libreoffice(&path, &partial, password, CONVERT_TIMEOUT),
+        };
+        converted.and_then(|_| std::fs::rename(&partial, &target).map_err(|e| ConvertError::Failed(e.to_string())))?;
+        office::trim_cache(&out_dir);
+        Ok(target)
+    })
+    .await
+    .map_err(|e| e.to_string())?;
+    match result {
+        Ok(pdf) => Ok(reg.open_paged(pdf, None).await),
+        Err(ConvertError::NeedsPassword) => Ok(OpenPagedResult::NeedsPassword),
+        Err(ConvertError::NotInstalled) => Err("not-installed".into()),
+        Err(e) => Err(e.to_string()),
     }
 }

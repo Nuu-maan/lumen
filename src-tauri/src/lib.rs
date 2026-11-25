@@ -21,8 +21,23 @@ struct Launch(Instant);
 type Reg<'a> = State<'a, Arc<Registry>>;
 
 #[tauri::command]
-async fn open_document(reg: Reg<'_>, path: String, password: Option<String>) -> Result<open::Opened, String> {
-    Ok(open::open(&reg, PathBuf::from(path), password).await)
+async fn open_document(reg: Reg<'_>, path: String, password: Option<String>, prefer_ms_office: bool) -> Result<open::Opened, String> {
+    Ok(open::open(&reg, PathBuf::from(path), password, prefer_ms_office).await)
+}
+
+#[tauri::command]
+async fn office_exact(
+    reg: Reg<'_>,
+    path: String,
+    password: Option<String>,
+    converter: engines::office::Converter,
+) -> Result<docs::OpenPagedResult, String> {
+    open::exact(&reg, PathBuf::from(path), password, converter).await
+}
+
+#[tauri::command]
+fn ms_office_available() -> bool {
+    engines::office::ms_office_installed()
 }
 
 #[tauri::command]
@@ -180,6 +195,7 @@ pub fn run() {
             handle_protocol(&protocol_registry, request.uri().path(), responder)
         })
         .setup(|app| {
+            std::thread::spawn(engines::office::ms_office_installed);
             if let Ok(dir) = app.path().app_cache_dir() {
                 let _ = app.state::<Arc<Registry>>().cache_dir.set(dir);
             }
@@ -206,6 +222,8 @@ pub fn run() {
             app_ready,
             bench_mark,
             open_document,
+            office_exact,
+            ms_office_available,
             close_document,
             text_lines,
             text_search,
@@ -216,6 +234,11 @@ pub fn run() {
             outline,
             search
         ])
-        .run(tauri::generate_context!())
-        .expect("failed to start Lumen");
+        .build(tauri::generate_context!())
+        .expect("failed to start Lumen")
+        .run(|app, event| {
+            if let tauri::RunEvent::Exit = event {
+                app.state::<Arc<Registry>>().office().shutdown();
+            }
+        });
 }
