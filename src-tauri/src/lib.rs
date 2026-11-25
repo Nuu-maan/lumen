@@ -1,3 +1,4 @@
+mod engines;
 mod formats;
 mod sniff;
 
