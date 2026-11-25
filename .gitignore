@@ -5,3 +5,4 @@ src-tauri/gen/schemas/
 target/
 *.log
 .claude/settings.local.json
+bench/samples/
