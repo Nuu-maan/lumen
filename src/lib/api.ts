@@ -79,8 +79,21 @@ export interface ArchiveEntry {
   dir: boolean;
 }
 
+export type Converter = "libreOffice" | "msOffice";
+
+export interface Fast {
+  html: string;
+  notes: string[];
+}
+
+export const converterLabel: Record<Converter, string> = {
+  libreOffice: "High fidelity (LibreOffice)",
+  msOffice: "Exact (MS Office)",
+};
+
 export type Opened =
-  | ({ kind: "paged"; file: FileInfo; engine: string } & PagedResult)
+  | { kind: "office"; file: FileInfo; fast: Fast | null; encrypted: boolean; converter: Converter }
+  | ({ kind: "paged"; file: FileInfo; engine: string; notes?: string[] | null } & PagedResult)
   | { kind: "text"; file: FileInfo; doc: number; first: Lines; language: string }
   | { kind: "html"; file: FileInfo; html: string }
   | { kind: "email"; file: FileInfo; doc: number; email: Email }
@@ -103,7 +116,11 @@ export const pageUrl = (doc: number, page: number, width: number) => `${protocol
 export const api = {
   ready: () => invoke<string[]>("app_ready"),
   benchMark: (name: string, ms: number) => invoke<void>("bench_mark", { name, ms }),
-  open: (path: string, password?: string) => invoke<Opened>("open_document", { path, password }),
+  open: (path: string, password?: string) =>
+    invoke<Opened>("open_document", { path, password, preferMsOffice: localStorage.getItem("lumen.msoffice") !== "0" }),
+  officeExact: (path: string, password: string | undefined, converter: Converter) =>
+    invoke<PagedResult>("office_exact", { path, password, converter }),
+  msOfficeAvailable: () => invoke<boolean>("ms_office_available"),
   close: (doc: number) => invoke<void>("close_document", { doc }),
   setViewport: (doc: number, first: number, last: number, scale: number) =>
     invoke<void>("set_viewport", { doc, first, last, scale }),
