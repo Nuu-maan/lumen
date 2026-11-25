@@ -144,6 +144,15 @@ fn app_ready(app: tauri::AppHandle, launch: State<Launch>) -> Vec<String> {
     std::env::args().skip(1).filter(|a| !a.starts_with('-')).collect()
 }
 
+#[tauri::command]
+fn bench_mark(app: tauri::AppHandle, name: String, ms: f64) {
+    let Ok(wanted) = std::env::var("LUMEN_BENCH") else { return };
+    println!("{name}_ms={ms:.1}");
+    if wanted == name {
+        app.exit(0);
+    }
+}
+
 fn respond(status: StatusCode, content_type: &str, body: Vec<u8>) -> Response<Vec<u8>> {
     Response::builder()
         .status(status)
@@ -210,6 +219,7 @@ pub fn run() {
         .manage(registry)
         .invoke_handler(tauri::generate_handler![
             app_ready,
+            bench_mark,
             open_document,
             close_document,
             set_viewport,
