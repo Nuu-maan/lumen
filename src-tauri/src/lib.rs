@@ -1,3 +1,7 @@
+mod engines;
+mod formats;
+mod sniff;
+
 use std::time::Instant;
 use tauri::{Emitter, Manager};
 
