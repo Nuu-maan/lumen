@@ -47,6 +47,7 @@ pub enum Doc {
     File(PathBuf, &'static str),
     Email(Arc<Vec<Part>>),
     Archive(PathBuf),
+    Sheet(Arc<crate::engines::sheet::SheetDoc>),
 }
 
 pub struct Registry {
@@ -112,6 +113,13 @@ impl Registry {
 
     pub fn cache_root(&self) -> PathBuf {
         self.cache_dir.get().cloned().unwrap_or_else(|| std::env::temp_dir().join("lumen"))
+    }
+
+    pub fn sheet(&self, id: u32) -> Option<Arc<crate::engines::sheet::SheetDoc>> {
+        match self.get(id)? {
+            Doc::Sheet(d) => Some(d),
+            _ => None,
+        }
     }
 
     pub fn scratch_dir(&self, id: u32) -> PathBuf {
