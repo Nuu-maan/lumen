@@ -4,9 +4,11 @@
   import { getCurrentWebview } from "@tauri-apps/api/webview";
   import { open as openDialog } from "@tauri-apps/plugin-dialog";
   import { openPath as systemOpen, openUrl } from "@tauri-apps/plugin-opener";
-  import { api } from "./lib/api";
+  import { api, converterLabel } from "./lib/api";
   import { store, activeTab, openPath, load, closeTab, cycleTab, forgetRecent, openExtracted, retryOffice } from "./lib/tabs.svelte";
   import { formatSize } from "./lib/format";
+  import { PagedState } from "./lib/paged.svelte";
+  import SheetView from "./views/SheetView.svelte";
   import Icon from "./components/Icon.svelte";
   import Dialog from "./components/Dialog.svelte";
   import FindBar from "./components/FindBar.svelte";
@@ -27,7 +29,10 @@
   let pagedView: PagedView | undefined = $state();
 
   const tab = $derived(activeTab());
-  const paged = $derived(tab?.view.kind === "paged" ? tab.view.state : null);
+  const sheet = $derived(tab?.view.kind === "sheet" ? tab.view.state : null);
+  const paged = $derived(
+    tab?.view.kind === "paged" ? tab.view.state : sheet?.mode === "print" && sheet.print instanceof PagedState ? sheet.print : null,
+  );
   const image = $derived(tab?.view.kind === "image" ? tab.view.state : null);
   const textFind = $derived(tab?.view.kind === "text" ? tab.view.find : null);
 
@@ -142,8 +147,20 @@
       <button class="btn new-tab" title="Open file (Ctrl+O)" aria-label="Open file" onclick={chooseFiles}><Icon name="open" /></button>
     </header>
 
-    {#if paged || image || textFind}
+    {#if paged || image || textFind || sheet?.converter}
     <div class="toolbar" role="toolbar" aria-label="View controls">
+      {#if sheet?.converter && tab}
+        {@const t = tab}
+        <div class="segmented" role="radiogroup" aria-label="Spreadsheet view">
+          <button class="btn" role="radio" aria-checked={sheet.mode === "grid"} onclick={() => (sheet.mode = "grid")}>
+            <Icon name="grid" /> Grid
+          </button>
+          <button class="btn" role="radio" aria-checked={sheet.mode === "print"} onclick={() => sheet.showPrint(t.path)}>
+            <Icon name="print" /> Print layout
+          </button>
+        </div>
+        {#if paged}<span class="sep"></span>{/if}
+      {/if}
       {#if paged}
         <button class="btn" aria-pressed={sidebarOpen} title="Sidebar (Ctrl+B)" aria-label="Toggle sidebar" onclick={() => (sidebarOpen = !sidebarOpen)}>
           <Icon name="sidebar" />
@@ -276,6 +293,49 @@
               <div class="skeleton-page"><span></span><span></span><span></span><span></span><span></span></div>
             </div>
           {/if}
+        {:else if tab.view.kind === "sheet"}
+          {@const st = tab.view.state}
+          {@const t = tab}
+          {#if st.mode === "grid"}
+            {#if st.infos[st.sheet]}
+              {#key `${tab.id}/${st.sheet}`}
+                <SheetView doc={st.doc} names={st.names} info={st.infos[st.sheet]} sheet={st.sheet} onselect={(i) => st.select(i)} />
+              {/key}
+            {/if}
+          {:else if st.print instanceof PagedState}
+            {@const ps = st.print}
+            {#key ps.doc}
+              <div class="swap swapped"><PagedView bind:this={pagedView} state={ps} onExternalLink={(uri) => (pendingLink = uri)} /></div>
+            {/key}
+            {#if findOpen}
+              <FindBar
+                query={ps.query}
+                count={ps.hits.length}
+                index={ps.hitIndex}
+                searching={ps.searching}
+                onsearch={(q) => ps.search(q)}
+                onnext={(d) => ps.selectHit(ps.hitIndex + d)}
+                onclose={() => {
+                  findOpen = false;
+                  ps.search("");
+                }}
+              />
+            {/if}
+          {:else if st.print && typeof st.print === "object"}
+            <div class="center-card" role="alert">
+              <Icon name="alert" size={20} />
+              <h1>Couldn't render the print layout</h1>
+              <p class="muted">{st.print.error}</p>
+              <div class="row">
+                <button class="btn secondary" onclick={() => (st.mode = "grid")}>Back to grid</button>
+                <button class="btn primary" onclick={() => systemOpen(t.path)}>Open with system app</button>
+              </div>
+            </div>
+          {:else}
+            <div class="skeleton-stage" aria-busy="true" aria-label="Rendering print layout">
+              <div class="skeleton-page"><span></span><span></span><span></span><span></span><span></span></div>
+            </div>
+          {/if}
         {:else if tab.view.kind === "html"}
           <HtmlView html={tab.view.html} title={tab.name} />
         {:else if tab.view.kind === "email"}
@@ -342,6 +402,9 @@
         {:else if image?.natural}
           <span class="tnum">{image.natural.w} × {image.natural.h} px</span>
           <span class="tnum">{Math.round(image.zoom * 100)}%</span>
+        {:else if sheet?.mode === "grid" && sheet.infos[sheet.sheet]}
+          {@const info = sheet.infos[sheet.sheet]}
+          <span class="tnum">{info.rows.toLocaleString()} rows × {info.cols} columns</span>
         {:else if tab.view.kind === "text" && tab.file?.format.id === "code"}
           <span>{tab.view.language}</span>
         {/if}
@@ -349,6 +412,10 @@
         <span class="grow"></span>
         {#if tab.view.kind === "office"}
           <span class="badge">{tab.view.status === "converting" ? "Fast preview, rendering exact layout…" : "Fast preview"}</span>
+        {:else if sheet}
+          {#if sheet.mode === "print" && sheet.converter}
+            <span class="badge" class:exact={sheet.print instanceof PagedState}>{sheet.print === "converting" ? "Rendering print layout…" : converterLabel[sheet.converter]}</span>
+          {:else}<span class="badge">{sheet.converter ? "Fast preview (grid)" : "Exact"}</span>{/if}
         {:else if tab.view.kind === "paged"}<span class="badge exact">{tab.view.engine}</span>
         {:else if tab.view.kind !== "loading" && tab.view.kind !== "error" && tab.view.kind !== "password"}<span class="badge exact">Exact</span>{/if}
       {/if}
@@ -494,6 +561,17 @@
     height: 26px;
     text-align: center;
     font-variant-numeric: tabular-nums;
+  }
+  .segmented .btn[aria-checked="true"] {
+    color: var(--text);
+    background: var(--gray-4);
+  }
+  .segmented {
+    display: flex;
+    gap: 2px;
+    padding: 2px;
+    border-radius: 8px;
+    background: var(--gray-1);
   }
   .zoom-label {
     min-width: 52px;
