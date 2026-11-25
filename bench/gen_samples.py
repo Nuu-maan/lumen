@@ -52,10 +52,96 @@ def text_page(n, rnd):
     lines.append(b"0.85 0.4 0.1 rg 72 40 468 2 re f")
     return b"\n".join(lines)
 
+def write_log(path, size):
+    line = b"2026-11-25T10:00:00.000Z INFO  worker-%02d request id=%08d path=/api/v1/items status=200 took=%dms\n"
+    block = b"".join(line % (i % 16, i, i % 900) for i in range(20000))
+    with open(path, "wb") as f:
+        written = 0
+        while written < size:
+            f.write(block)
+            written += len(block)
+
+
+MARKDOWN = """# Lumen sample
+
+A **Markdown** file with a table:
+
+| Format | Engine |
+|---|---|
+| PDF | MuPDF |
+| DOCX | LibreOffice |
+
+- [x] lists
+- [ ] tasks
+
+```rust
+fn main() {}
+```
+
+<script>document.body.innerHTML = 'scripts must not run'</script>
+"""
+
+HTML = """<!doctype html><html><body style="font-family:sans-serif"><h1>HTML sample</h1>
+<p id="p">Scripts are blocked.</p><script>document.getElementById('p').textContent = 'SCRIPT RAN'</script>
+<img src="https://example.com/tracker.png" alt="remote image (blocked)"></body></html>
+"""
+
+EML = b"""From: Ana Silva <ana@example.com>\r
+To: Bo Chen <bo@example.com>\r
+Subject: Quarterly numbers\r
+Date: Tue, 1 Jul 2025 10:00:00 +0000\r
+MIME-Version: 1.0\r
+Content-Type: multipart/mixed; boundary=XX\r
+\r
+--XX\r
+Content-Type: text/html; charset=utf-8\r
+\r
+<h2>Hi Bo,</h2><p>The numbers are attached.</p>\r
+--XX\r
+Content-Type: text/csv\r
+Content-Disposition: attachment; filename=numbers.csv\r
+\r
+quarter,revenue\r
+Q1,120\r
+Q2,135\r
+--XX--\r
+"""
+
+SVG = """<svg xmlns="http://www.w3.org/2000/svg" width="200" height="120"><rect width="200" height="120" fill="#e0912f"/>
+<text x="20" y="70" font-size="32" fill="#fff">Lumen</text><script>alert(1)</script></svg>
+"""
+
+RUST = """use std::io;
+
+fn main() -> io::Result<()> {
+    let name = "Lumen";
+    println!("hello {name}");
+    Ok(())
+}
+"""
+
+
+def write_text_samples():
+    import zipfile
+
+    write_log(os.path.join(OUT, "huge-500mb.log"), 500 * 1000 * 1000)
+    for name, data in [("readme.md", MARKDOWN), ("page.html", HTML), ("logo.svg", SVG), ("main.rs", RUST * 50)]:
+        with open(os.path.join(OUT, name), "w", encoding="utf-8", newline="\n") as f:
+            f.write(data)
+    with open(os.path.join(OUT, "message.eml"), "wb") as f:
+        f.write(EML)
+    with zipfile.ZipFile(os.path.join(OUT, "bundle.zip"), "w", zipfile.ZIP_DEFLATED) as z:
+        z.writestr("docs/readme.md", "# Inside a zip\n")
+        z.writestr("src/main.rs", RUST)
+        z.write(os.path.join(OUT, "text-100p.pdf"), "report.pdf")
+
 
 def main():
     os.makedirs(OUT, exist_ok=True)
     rnd = random.Random(7)
+    if "--text-only" in sys.argv:
+        write_text_samples()
+        return
     write_pdf(os.path.join(OUT, "text-100p.pdf"), [(text_page(i + 1, rnd), None) for i in range(100)])
     pages = []
     for i in range(40):
@@ -64,6 +150,7 @@ def main():
         image = (w, h, zlib.compress(raw, 1))
         pages.append((b"q 468 351 0 0 72 380 cm /Im1 Do Q\n" + text_page(i + 1, rnd), image))
     write_pdf(os.path.join(OUT, "images-100mb.pdf"), pages)
+    write_text_samples()
     for name in sorted(os.listdir(OUT)):
         print(f"{name}: {os.path.getsize(os.path.join(OUT, name)) / 1e6:.1f} MB")
 
