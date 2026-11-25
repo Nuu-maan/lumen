@@ -219,7 +219,51 @@ def write_docx(path, pages, rnd):
         z.writestr("word/document.xml", doc)
 
 
+FODP_HEAD = """<?xml version="1.0" encoding="UTF-8"?>
+<office:document xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:draw="urn:oasis:names:tc:opendocument:xmlns:drawing:1.0"
+ xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:presentation="urn:oasis:names:tc:opendocument:xmlns:presentation:1.0"
+ xmlns:svg="urn:oasis:names:tc:opendocument:xmlns:svg-compatible:1.0" xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0"
+ xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0" office:version="1.3" office:mimetype="application/vnd.oasis.opendocument.presentation">
+<office:automatic-styles>
+<style:page-layout style:name="PM1"><style:page-layout-properties fo:page-width="28cm" fo:page-height="15.75cm"/></style:page-layout>
+<style:style style:name="big" style:family="paragraph"><style:text-properties fo:font-size="36pt" fo:font-weight="bold"/></style:style>
+</office:automatic-styles>
+<office:master-styles><style:master-page style:name="Default" style:page-layout-name="PM1"/></office:master-styles>
+<office:body><office:presentation>
+"""
+
+FODP_SLIDE = """<draw:page draw:name="s%(n)d" draw:master-page-name="Default">
+<draw:frame svg:x="2cm" svg:y="2cm" svg:width="24cm" svg:height="3cm"><draw:text-box><text:p text:style-name="big">%(title)s</text:p></draw:text-box></draw:frame>
+<draw:frame svg:x="2cm" svg:y="6cm" svg:width="24cm" svg:height="8cm"><draw:text-box><text:p>%(body)s</text:p></draw:text-box></draw:frame>
+<presentation:notes><draw:frame presentation:class="notes" svg:x="2cm" svg:y="14cm" svg:width="17cm" svg:height="10cm"><draw:text-box><text:p>%(note)s</text:p></draw:text-box></draw:frame></presentation:notes>
+</draw:page>
+"""
+
+
+def write_deck(path):
+    import shutil
+    import subprocess
+    import tempfile
+
+    soffice = shutil.which("soffice") or next((p for p in [r"C:\Program Files\LibreOffice\program\soffice.exe", "/Applications/LibreOffice.app/Contents/MacOS/soffice"] if os.path.exists(p)), None)
+    if not soffice:
+        print("skipping deck.pptx: LibreOffice not found")
+        return
+    slides = [("Quarterly review", "Revenue grew 12% quarter over quarter.", "Open with the headline number."),
+              ("Regions", "North and West led growth.", "Mention the new West office."),
+              ("Next steps", "Hire two engineers. Ship the viewer.", "")]
+    body = "".join(FODP_SLIDE % {"n": i, "title": t, "body": b, "note": n} for i, (t, b, n) in enumerate(slides))
+    with tempfile.TemporaryDirectory() as tmp:
+        src = os.path.join(tmp, "deck.fodp")
+        with open(src, "w", encoding="utf-8") as f:
+            f.write(FODP_HEAD + body + "</office:presentation></office:body></office:document>")
+        profile = "file:///" + os.path.join(tmp, "profile").replace(os.sep, "/")
+        subprocess.run([soffice, "-env:UserInstallation=" + profile, "--headless", "--convert-to", "pptx", "--outdir", tmp, src], check=True, capture_output=True, timeout=180)
+        shutil.move(os.path.join(tmp, "deck.pptx"), path)
+
+
 def write_office_samples(rnd):
+    write_deck(os.path.join(OUT, "deck.pptx"))
     write_xlsx(os.path.join(OUT, "orders-100k.xlsx"), 100_000)
     write_docx(os.path.join(OUT, "report-20p.docx"), 20, rnd)
     with open(os.path.join(OUT, "orders.csv"), "w", encoding="utf-8", newline="\n") as f:
