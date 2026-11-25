@@ -5,7 +5,7 @@
   import { open as openDialog } from "@tauri-apps/plugin-dialog";
   import { openPath as systemOpen, openUrl } from "@tauri-apps/plugin-opener";
   import { api } from "./lib/api";
-  import { store, activeTab, openPath, load, closeTab, cycleTab, forgetRecent, openExtracted } from "./lib/tabs.svelte";
+  import { store, activeTab, openPath, load, closeTab, cycleTab, forgetRecent, openExtracted, retryOffice } from "./lib/tabs.svelte";
   import { formatSize } from "./lib/format";
   import Icon from "./components/Icon.svelte";
   import Dialog from "./components/Dialog.svelte";
@@ -206,7 +206,9 @@
           </div>
         {:else if tab.view.kind === "paged"}
           {#key tab.id}
-            <PagedView bind:this={pagedView} state={tab.view.state} onExternalLink={(uri) => (pendingLink = uri)} />
+            <div class="swap" class:swapped={tab.view.swapped}>
+              <PagedView bind:this={pagedView} state={tab.view.state} onExternalLink={(uri) => (pendingLink = uri)} />
+            </div>
           {/key}
           {#if findOpen}
             <FindBar
@@ -239,6 +241,41 @@
               }}
             />
           {/if}
+        {:else if tab.view.kind === "office"}
+          {@const view = tab.view}
+          {@const t = tab}
+          {#if view.status === "failed" || (view.status === "notInstalled" && !view.fast)}
+            <div class="center-card" role="alert">
+              <Icon name="alert" size={20} />
+              {#if view.status === "notInstalled"}
+                <h1>Install LibreOffice to view {t.name}</h1>
+                <p class="muted">Lumen renders Office files with LibreOffice (free). Install it, then reopen this file.</p>
+              {:else}
+                <h1>Couldn't render {t.name}</h1>
+                <p class="muted">{view.message}</p>
+              {/if}
+              <div class="row">
+                {#if view.status === "notInstalled"}
+                  <button class="btn secondary" onclick={() => openUrl("https://www.libreoffice.org/download/download-libreoffice/")}>Download LibreOffice</button>
+                {:else}
+                  <button class="btn secondary" onclick={() => load(t.id)}>Retry</button>
+                {/if}
+                <button class="btn primary" onclick={() => systemOpen(t.path)}>Open with system app</button>
+              </div>
+            </div>
+          {:else if view.fast}
+            {#if view.status === "notInstalled"}
+              <div class="banner" role="status">
+                Showing a text preview. Install LibreOffice for the exact layout.
+                <button class="btn" onclick={() => openUrl("https://www.libreoffice.org/download/download-libreoffice/")}>Download LibreOffice</button>
+              </div>
+            {/if}
+            <div class="fast" class:with-banner={view.status === "notInstalled"}><HtmlView html={view.fast.html} title="{t.name} preview" /></div>
+          {:else}
+            <div class="skeleton-stage" aria-busy="true" aria-label="Rendering {t.name}">
+              <div class="skeleton-page"><span></span><span></span><span></span><span></span><span></span></div>
+            </div>
+          {/if}
         {:else if tab.view.kind === "html"}
           <HtmlView html={tab.view.html} title={tab.name} />
         {:else if tab.view.kind === "email"}
@@ -268,7 +305,7 @@
             class="center-card"
             onsubmit={(e) => {
               e.preventDefault();
-              void load(t.id, password).then(() => (password = ""));
+              void retryOffice(t.id, password).then(() => (password = ""));
             }}
           >
             <Icon name="lock" size={20} />
@@ -310,7 +347,9 @@
         {/if}
         {#if tab.file}<span class="tnum">{formatSize(tab.file.size)}</span>{/if}
         <span class="grow"></span>
-        {#if tab.view.kind === "paged"}<span class="badge exact">{tab.view.engine}</span>
+        {#if tab.view.kind === "office"}
+          <span class="badge">{tab.view.status === "converting" ? "Fast preview, rendering exact layout…" : "Fast preview"}</span>
+        {:else if tab.view.kind === "paged"}<span class="badge exact">{tab.view.engine}</span>
         {:else if tab.view.kind !== "loading" && tab.view.kind !== "error" && tab.view.kind !== "password"}<span class="badge exact">Exact</span>{/if}
       {/if}
     </footer>
@@ -501,6 +540,34 @@
     border-radius: 50%;
     background: var(--accent-9);
     vertical-align: 1px;
+  }
+  .swap {
+    position: absolute;
+    inset: 0;
+  }
+  .swap.swapped {
+    animation: fade 220ms var(--ease-out);
+  }
+  .fast {
+    position: absolute;
+    inset: 0;
+  }
+  .fast.with-banner {
+    top: 40px;
+  }
+  .banner {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 0 16px;
+    background: var(--gray-3);
+    border-bottom: 1px solid var(--gray-5);
+    color: var(--text-2);
   }
   .skeleton-stage {
     position: absolute;
