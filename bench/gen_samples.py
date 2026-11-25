@@ -136,9 +136,102 @@ def write_text_samples():
         z.write(os.path.join(OUT, "text-100p.pdf"), "report.pdf")
 
 
+CT_XLSX = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+<Default Extension="xml" ContentType="application/xml"/>
+<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+<Override PartName="/xl/worksheets/sheet2.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+</Types>"""
+
+ROOT_RELS = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="%s"/>
+</Relationships>"""
+
+WORKBOOK = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+<sheets><sheet name="Orders" sheetId="1" r:id="rId1"/><sheet name="Summary" sheetId="2" r:id="rId2"/></sheets></workbook>"""
+
+WORKBOOK_RELS = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet2.xml"/>
+</Relationships>"""
+
+CT_DOCX = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+<Default Extension="xml" ContentType="application/xml"/>
+<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+</Types>"""
+
+
+def cell(ref, value):
+    if isinstance(value, str):
+        return '<c r="%s" t="inlineStr"><is><t>%s</t></is></c>' % (ref, value)
+    return '<c r="%s"><v>%s</v></c>' % (ref, value)
+
+
+def write_xlsx(path, rows):
+    import zipfile
+
+    cols = "ABCDEFGH"
+    header = ["Order", "Date", "Region", "Product", "Units", "Price", "Total", "Status"]
+    regions = ["North", "South", "East", "West"]
+    products = ["Widget", "Gadget", "Gizmo", "Doohickey"]
+    parts = ['<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">',
+             '<sheetViews><sheetView workbookViewId="0"><pane xSplit="1" ySplit="1" topLeftCell="B2" activePane="bottomRight" state="frozen"/></sheetView></sheetViews><sheetData>',
+             '<row r="1">' + "".join(cell(c + "1", h) for c, h in zip(cols, header)) + "</row>"]
+    for i in range(2, rows + 2):
+        units = i % 50 + 1
+        price = 2.5 + (i % 7)
+        values = [i - 1, 45658 + i % 365, regions[i % 4], products[i % 4], units, price, round(units * price, 2), "Shipped" if i % 3 else "Open"]
+        parts.append('<row r="%d">%s</row>' % (i, "".join(cell("%s%d" % (c, i), v) for c, v in zip(cols, values))))
+    parts.append("</sheetData></worksheet>")
+    summary = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData><row r="1">%s</row></sheetData></worksheet>' % (cell("A1", "Rows") + cell("B1", rows))
+    with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as z:
+        z.writestr("[Content_Types].xml", CT_XLSX)
+        z.writestr("_rels/.rels", ROOT_RELS % "xl/workbook.xml")
+        z.writestr("xl/workbook.xml", WORKBOOK)
+        z.writestr("xl/_rels/workbook.xml.rels", WORKBOOK_RELS)
+        z.writestr("xl/worksheets/sheet1.xml", "".join(parts))
+        z.writestr("xl/worksheets/sheet2.xml", summary)
+
+
+def write_docx(path, pages, rnd):
+    import zipfile
+
+    body = []
+    for page in range(pages):
+        body.append('<w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>Section %d</w:t></w:r></w:p>' % (page + 1))
+        for _ in range(9):
+            words = " ".join(rnd.choice(WORDS) for _ in range(60))
+            body.append("<w:p><w:r><w:t>%s</w:t></w:r></w:p>" % words)
+        rows = "".join("<w:tr>%s</w:tr>" % "".join("<w:tc><w:p><w:r><w:t>R%dC%d</w:t></w:r></w:p></w:tc>" % (r, c) for c in range(4)) for r in range(4))
+        body.append('<w:tbl><w:tblPr><w:tblBorders><w:top w:val="single" w:sz="4"/><w:bottom w:val="single" w:sz="4"/><w:insideH w:val="single" w:sz="4"/><w:insideV w:val="single" w:sz="4"/></w:tblBorders></w:tblPr>%s</w:tbl>' % rows)
+        body.append('<w:p><w:r><w:br w:type="page"/></w:r></w:p>')
+    doc = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>%s</w:body></w:document>' % "".join(body)
+    with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as z:
+        z.writestr("[Content_Types].xml", CT_DOCX)
+        z.writestr("_rels/.rels", ROOT_RELS % "word/document.xml")
+        z.writestr("word/document.xml", doc)
+
+
+def write_office_samples(rnd):
+    write_xlsx(os.path.join(OUT, "orders-100k.xlsx"), 100_000)
+    write_docx(os.path.join(OUT, "report-20p.docx"), 20, rnd)
+    with open(os.path.join(OUT, "orders.csv"), "w", encoding="utf-8", newline="\n") as f:
+        f.write("order,region,note\n1,North,\"multi\nline\"\n2,South,plain\n")
+
+
 def main():
     os.makedirs(OUT, exist_ok=True)
     rnd = random.Random(7)
+    if "--office-only" in sys.argv:
+        write_office_samples(rnd)
+        return
     if "--text-only" in sys.argv:
         write_text_samples()
         return
@@ -151,6 +244,7 @@ def main():
         pages.append((b"q 468 351 0 0 72 380 cm /Im1 Do Q\n" + text_page(i + 1, rnd), image))
     write_pdf(os.path.join(OUT, "images-100mb.pdf"), pages)
     write_text_samples()
+    write_office_samples(rnd)
     for name in sorted(os.listdir(OUT)):
         print(f"{name}: {os.path.getsize(os.path.join(OUT, name)) / 1e6:.1f} MB")
 
