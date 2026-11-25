@@ -57,6 +57,8 @@ export interface Lines {
   lines: string[];
   total: number;
   complete: boolean;
+  tokens: [number, number][][] | null;
+  highlighting: boolean;
 }
 
 export interface Email {

@@ -26,7 +26,9 @@
   const initial = untrack(() => first);
   let total = $state(initial.total);
   let complete = $state(initial.complete);
-  let chunks = $state<Record<number, string[]>>({ 0: initial.lines });
+  let highlighting = $state(initial.highlighting);
+  type Chunk = { lines: string[]; tokens: [number, number][][] | null };
+  let chunks = $state<Record<number, Chunk>>({ 0: { lines: initial.lines, tokens: initial.tokens } });
   const loading = new Set<number>();
 
   const fullHeight = $derived(total * ROW + 16);
@@ -42,7 +44,7 @@
     const result = await api.textLines(doc, chunk * CHUNK, CHUNK).catch(() => null);
     loading.delete(chunk);
     if (!result) return;
-    chunks[chunk] = result.lines;
+    chunks[chunk] = { lines: result.lines, tokens: result.tokens };
     total = Math.max(result.total, chunk * CHUNK + result.lines.length);
     complete = result.complete;
   }
@@ -54,37 +56,56 @@
   });
 
   $effect(() => {
-    if (complete) return;
+    if (complete && !highlighting) return;
     const timer = setInterval(async () => {
       const r = await api.textLines(doc, 0, 1).catch(() => null);
-      if (r) {
-        total = r.total;
-        complete = r.complete;
+      if (!r) return;
+      total = r.total;
+      complete = r.complete;
+      if (highlighting && !r.highlighting) {
+        highlighting = false;
+        chunks = {};
       }
-    }, 250);
+    }, 150);
     return () => clearInterval(timer);
   });
 
   const rows = $derived.by(() => {
-    const out: { n: number; text: string | null }[] = [];
+    const out: { n: number; text: string | null; tokens: [number, number][] | null }[] = [];
     for (let n = firstLine; n < Math.min(total, firstLine + visibleCount); n++) {
-      out.push({ n, text: chunks[Math.floor(n / CHUNK)]?.[n % CHUNK] ?? null });
+      const chunk = chunks[Math.floor(n / CHUNK)];
+      out.push({ n, text: chunk?.lines[n % CHUNK] ?? null, tokens: chunk?.tokens?.[n % CHUNK] ?? null });
     }
     return out;
   });
 
-  function segments(text: string): { t: string; hit: boolean }[] {
-    const q = find.query.toLowerCase();
-    if (!q) return [{ t: text, hit: false }];
-    const lower = text.toLowerCase();
-    const out = [];
-    let i = 0;
-    for (let j = lower.indexOf(q); j >= 0; j = lower.indexOf(q, j + q.length)) {
-      if (j > i) out.push({ t: text.slice(i, j), hit: false });
-      out.push({ t: text.slice(j, j + q.length), hit: true });
-      i = j + q.length;
+  function segments(text: string, tokens: [number, number][] | null): { t: string; cls: number; hit: boolean }[] {
+    const cuts = new Set([0, text.length]);
+    const classAt: [number, number][] = [];
+    let at = 0;
+    for (const [len, cls] of tokens ?? []) {
+      classAt.push([at, cls]);
+      cuts.add(at);
+      at += len;
+      cuts.add(Math.min(at, text.length));
     }
-    if (i < text.length) out.push({ t: text.slice(i), hit: false });
+    const hits: [number, number][] = [];
+    const q = find.query.toLowerCase();
+    if (q) {
+      const lower = text.toLowerCase();
+      for (let j = lower.indexOf(q); j >= 0; j = lower.indexOf(q, j + q.length)) {
+        hits.push([j, j + q.length]);
+        cuts.add(j).add(j + q.length);
+      }
+    }
+    const points = [...cuts].filter((p) => p <= text.length).sort((a, b) => a - b);
+    const out = [];
+    for (let k = 0; k < points.length - 1; k++) {
+      const [a, b] = [points[k], points[k + 1]];
+      if (a === b) continue;
+      const cls = classAt.findLast(([start]) => start <= a)?.[1] ?? 0;
+      out.push({ t: text.slice(a, b), cls, hit: hits.some(([s, e]) => a >= s && b <= e) });
+    }
     return out;
   }
 
@@ -131,7 +152,7 @@
           {#if row.text === null}
             <span class="line placeholder"></span>
           {:else}
-            <span class="line">{#each segments(row.text) as seg}{#if seg.hit}<mark>{seg.t}</mark>{:else}{seg.t}{/if}{/each}</span>
+            <span class="line">{#each segments(row.text, row.tokens) as seg}{#if seg.hit}<mark class="t{seg.cls}">{seg.t}</mark>{:else if seg.cls}<span class="t{seg.cls}">{seg.t}</span>{:else}{seg.t}{/if}{/each}</span>
           {/if}
         </div>
       {/each}
@@ -188,6 +209,13 @@
     border-radius: 4px;
     background: var(--gray-3);
   }
+  .t1 { color: oklch(62% 0.02 65); font-style: italic; }
+  .t2 { color: oklch(80% 0.11 140); }
+  .t3, .t4 { color: oklch(80% 0.1 50); }
+  .t5 { color: oklch(76% 0.12 340); }
+  .t6 { color: oklch(82% 0.1 230); }
+  .t7, .t8 { color: oklch(82% 0.09 190); }
+  .t9, .t10 { color: oklch(84% 0.1 85); }
   mark {
     background: var(--hit);
     color: inherit;

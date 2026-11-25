@@ -5,5 +5,5 @@ export default defineConfig({
   plugins: [svelte()],
   clearScreen: false,
   server: { port: 1420, strictPort: true, watch: { ignored: ["**/src-tauri/**"] } },
-  build: { target: "es2022", cssCodeSplit: false, modulePreload: false },
+  build: { target: "es2023", cssCodeSplit: false, modulePreload: false },
 });
