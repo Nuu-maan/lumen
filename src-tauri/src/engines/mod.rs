@@ -1,4 +1,8 @@
+pub mod archive;
+pub mod email;
+pub mod markup;
 pub mod mupdf;
+pub mod text;
 
 use serde::Serialize;
 
