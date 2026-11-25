@@ -4,7 +4,9 @@ use serde::Serialize;
 use std::borrow::Cow;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
+
+use super::highlight::{self, LineTokens};
 
 const MAX_LINE_CHARS: usize = 10_000;
 const INDEX_BATCH: usize = 1 << 16;
@@ -28,6 +30,7 @@ pub struct TextDoc {
     bytes: Bytes,
     starts: RwLock<Vec<usize>>,
     indexed: AtomicBool,
+    tokens: OnceLock<Option<Vec<LineTokens>>>,
 }
 
 #[derive(Serialize)]
@@ -37,6 +40,8 @@ pub struct Lines {
     pub lines: Vec<String>,
     pub total: usize,
     pub complete: bool,
+    pub tokens: Option<Vec<LineTokens>>,
+    pub highlighting: bool,
 }
 
 fn decode_utf16(data: &[u8], big_endian: bool) -> Vec<u8> {
@@ -55,9 +60,17 @@ impl TextDoc {
             [0xFE, 0xFF, ..] => Bytes::Owned(decode_utf16(&map, true)),
             _ => map,
         };
-        let doc = Arc::new(TextDoc { bytes, starts: RwLock::new(vec![0]), indexed: AtomicBool::new(false) });
+        let doc = Arc::new(TextDoc { bytes, starts: RwLock::new(vec![0]), indexed: AtomicBool::new(false), tokens: OnceLock::new() });
+        let extension = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_ascii_lowercase();
         let worker = doc.clone();
-        std::thread::Builder::new().name("text-index".into()).spawn(move || worker.build_index())?;
+        std::thread::Builder::new().name("text-index".into()).spawn(move || {
+            worker.build_index();
+            let tokens = (worker.bytes.len() <= highlight::MAX_BYTES).then(|| {
+                let text = worker.full_text();
+                highlight::highlight(&text, &extension, text.lines().next().unwrap_or(""))
+            });
+            let _ = worker.tokens.set(tokens.flatten());
+        })?;
         Ok(doc)
     }
 
@@ -135,7 +148,15 @@ impl TextDoc {
                 truncate(text)
             })
             .collect();
-        Lines { start, lines, total: self.estimated_lines(), complete: self.indexed.load(Ordering::Acquire) }
+        let tokens = self.tokens.get().and_then(|t| t.as_ref()).map(|t| t.iter().skip(start).take(count).cloned().collect());
+        Lines {
+            start,
+            lines,
+            total: self.estimated_lines(),
+            complete: self.indexed.load(Ordering::Acquire),
+            tokens,
+            highlighting: self.tokens.get().is_none() && self.bytes.len() <= highlight::MAX_BYTES,
+        }
     }
 
     pub fn full_text(&self) -> Cow<'_, str> {
@@ -193,6 +214,17 @@ mod tests {
         assert_eq!(l.total, 3);
         assert_eq!(doc.lines(1, 1).lines, ["two"]);
         assert!(doc.lines(5, 2).lines.is_empty());
+    }
+
+    #[test]
+    fn small_code_files_get_tokens() {
+        let doc = doc_from("hl.rs", b"fn main() {}\n");
+        while doc.tokens.get().is_none() {
+            std::thread::yield_now();
+        }
+        let l = doc.lines(0, 5);
+        assert!(!l.highlighting);
+        assert!(l.tokens.unwrap()[0].iter().any(|&(_, c)| c == 5));
     }
 
     #[test]
