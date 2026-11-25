@@ -2,12 +2,14 @@
   import { onMount } from "svelte";
   import { listen } from "@tauri-apps/api/event";
   import { getCurrentWebview } from "@tauri-apps/api/webview";
-  import { open as openDialog } from "@tauri-apps/plugin-dialog";
+  import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
+  import { getCurrentWindow } from "@tauri-apps/api/window";
+  import { printImage, printPaged } from "./lib/print";
   import { openPath as systemOpen, openUrl } from "@tauri-apps/plugin-opener";
   import { api, converterLabel } from "./lib/api";
   import { store, activeTab, openPath, load, closeTab, cycleTab, forgetRecent, openExtracted, retryOffice } from "./lib/tabs.svelte";
   import { formatSize } from "./lib/format";
-  import { PagedState } from "./lib/paged.svelte";
+  import { PagedState, type Fit } from "./lib/paged.svelte";
   import SheetView from "./views/SheetView.svelte";
   import Icon from "./components/Icon.svelte";
   import Dialog from "./components/Dialog.svelte";
@@ -27,6 +29,10 @@
   let pendingLink = $state<string | null>(null);
   let pageInput = $state("");
   let pagedView: PagedView | undefined = $state();
+  let presenting = $state(false);
+  let notesOpen = $state(localStorage.getItem("lumen.notes") !== "0");
+  let msOffice = $state(false);
+  let notice = $state<string | null>(null);
 
   const tab = $derived(activeTab());
   const sheet = $derived(tab?.view.kind === "sheet" ? tab.view.state : null);
@@ -35,6 +41,59 @@
   );
   const image = $derived(tab?.view.kind === "image" ? tab.view.state : null);
   const textFind = $derived(tab?.view.kind === "text" ? tab.view.find : null);
+  const notes = $derived(tab?.view.kind === "paged" && tab.view.notes?.some((n) => n.trim()) ? tab.view.notes : null);
+  const isDeck = $derived(tab?.file?.format.family === "presentation" && !!paged);
+  const officeEngine = $derived(tab?.view.kind === "paged" && tab.file?.format.engine === "office");
+
+  $effect(() => localStorage.setItem("lumen.notes", notesOpen ? "1" : "0"));
+
+  function flash(message: string) {
+    notice = message;
+    setTimeout(() => notice === message && (notice = null), 4000);
+  }
+
+  async function print() {
+    if (paged) await printPaged(paged.doc, paged.pages);
+    else if (image?.natural && tab?.doc != null) await printImage(tab.doc, image.natural);
+    else if (tab) flash("Printing works for documents, spreadsheets in print layout, and images.");
+  }
+
+  async function exportPdf() {
+    if (!paged || !tab) return flash("Export as PDF works for documents and spreadsheets in print layout.");
+    const target = await saveDialog({
+      title: "Export as PDF",
+      defaultPath: tab.name.replace(/\.[^.]+$/, "") + ".pdf",
+      filters: [{ name: "PDF", extensions: ["pdf"] }],
+    });
+    if (!target) return;
+    try {
+      await api.exportPdf(paged.doc, target);
+      flash(`Saved ${target.split(/[\\/]/).pop()}`);
+    } catch (e) {
+      flash(`Couldn't export the PDF: ${e}`);
+    }
+  }
+
+  let savedView: { fit: Fit; zoom: number } | null = null;
+  async function present(on: boolean) {
+    if (!paged || on === presenting) return;
+    if (on) {
+      savedView = { fit: paged.fit, zoom: paged.zoom };
+      paged.fit = "page";
+    } else if (savedView) {
+      paged.fit = savedView.fit;
+      paged.zoom = savedView.zoom;
+    }
+    presenting = on;
+    await getCurrentWindow().setFullscreen(on).catch(() => {});
+  }
+
+  function switchConverter() {
+    if (!tab) return;
+    const useMs = localStorage.getItem("lumen.msoffice") === "0";
+    localStorage.setItem("lumen.msoffice", useMs ? "1" : "0");
+    void load(tab.id);
+  }
 
   $effect(() => localStorage.setItem("lumen.sidebar", sidebarOpen ? "1" : "0"));
   $effect(() => {
@@ -82,6 +141,18 @@
     if (mod && key === "w") return e.preventDefault(), tab && closeTab(tab.id);
     if (mod && e.key === "Tab") return e.preventDefault(), cycleTab(e.shiftKey ? -1 : 1);
     if (mod && key === "b") return e.preventDefault(), (sidebarOpen = !sidebarOpen);
+    if (mod && key === "p") return e.preventDefault(), void print();
+    if (mod && e.shiftKey && key === "s") return e.preventDefault(), void exportPdf();
+    if (presenting && paged) {
+      e.preventDefault();
+      if (e.key === "Escape" || e.key === "F5") return void present(false);
+      if (["ArrowRight", "ArrowDown", "PageDown", " ", "Enter", "n"].includes(e.key)) return paged.goTo(paged.page + 1);
+      if (["ArrowLeft", "ArrowUp", "PageUp", "Backspace", "p"].includes(e.key)) return paged.goTo(paged.page - 1);
+      if (e.key === "Home") return paged.goTo(0);
+      if (e.key === "End") return paged.goTo(paged.pageCount - 1);
+      return;
+    }
+    if (e.key === "F5" && paged) return e.preventDefault(), void present(true);
     if (textFind && mod && key === "f") return e.preventDefault(), (findOpen = true);
     if (textFind && e.key === "F3") return e.preventDefault(), textFind.step(e.shiftKey ? -1 : 1);
     if (image) {
@@ -123,6 +194,7 @@
       }),
     ];
     requestAnimationFrame(() => requestAnimationFrame(() => api.ready().then(openAll)));
+    void api.msOfficeAvailable().then((v) => (msOffice = v));
     return () => unlisten.forEach((u) => u.then((f) => f()));
   });
 
@@ -195,6 +267,14 @@
           <Icon name="moon" />
         </button>
         <span class="grow"></span>
+        {#if notes}
+          <button class="btn" aria-pressed={notesOpen} title="Speaker notes" onclick={() => (notesOpen = !notesOpen)}><Icon name="notes" /> Notes</button>
+        {/if}
+        {#if isDeck}
+          <button class="btn" title="Present full screen (F5)" onclick={() => present(true)}><Icon name="present" /> Present</button>
+        {/if}
+        <button class="btn" title="Print (Ctrl+P)" aria-label="Print" onclick={print}><Icon name="print" /></button>
+        <button class="btn" title="Export as PDF (Ctrl+Shift+S)" aria-label="Export as PDF" onclick={exportPdf}><Icon name="download" /></button>
         <button class="btn" title="Find (Ctrl+F)" aria-label="Find" onclick={() => (findOpen = true)}><Icon name="search" /></button>
       {:else if image}
         <button class="btn" title="Zoom out (Ctrl+-)" aria-label="Zoom out" onclick={() => image.zoomStep(-1)}><Icon name="zoomOut" /></button>
@@ -205,6 +285,8 @@
         </button>
         <span class="sep"></span>
         <button class="btn" title="Rotate (Ctrl+R)" aria-label="Rotate clockwise" onclick={() => image.rotate()}><Icon name="rotate" /></button>
+        <span class="grow"></span>
+        <button class="btn" title="Print (Ctrl+P)" aria-label="Print" onclick={print}><Icon name="print" /></button>
       {:else if textFind}
         <span class="grow"></span>
         <button class="btn" title="Find (Ctrl+F)" aria-label="Find" onclick={() => (findOpen = true)}><Icon name="search" /></button>
@@ -223,9 +305,17 @@
           </div>
         {:else if tab.view.kind === "paged"}
           {#key tab.id}
-            <div class="swap" class:swapped={tab.view.swapped}>
-              <PagedView bind:this={pagedView} state={tab.view.state} onExternalLink={(uri) => (pendingLink = uri)} />
+            <div class="swap" class:swapped={tab.view.swapped} class:with-notes={notes && notesOpen}>
+              {#if !presenting}
+                <PagedView bind:this={pagedView} state={tab.view.state} onExternalLink={(uri) => (pendingLink = uri)} />
+              {/if}
             </div>
+            {#if notes && notesOpen}
+              <aside class="notes" aria-label="Speaker notes">
+                <h2>Notes for slide {tab.view.state.page + 1}</h2>
+                <p>{notes[tab.view.state.page]?.trim() || "No notes for this slide."}</p>
+              </aside>
+            {/if}
           {/key}
           {#if findOpen}
             <FindBar
@@ -416,7 +506,13 @@
           {#if sheet.mode === "print" && sheet.converter}
             <span class="badge" class:exact={sheet.print instanceof PagedState}>{sheet.print === "converting" ? "Rendering print layout…" : converterLabel[sheet.converter]}</span>
           {:else}<span class="badge">{sheet.converter ? "Fast preview (grid)" : "Exact"}</span>{/if}
-        {:else if tab.view.kind === "paged"}<span class="badge exact">{tab.view.engine}</span>
+        {:else if tab.view.kind === "paged"}
+          {#if officeEngine && msOffice}
+            <button class="btn status-btn" onclick={switchConverter}>
+              {tab.view.engine.includes("MS Office") ? "Render with LibreOffice" : "Render with MS Office"}
+            </button>
+          {/if}
+          <span class="badge exact">{tab.view.engine}</span>
         {:else if tab.view.kind !== "loading" && tab.view.kind !== "error" && tab.view.kind !== "password"}<span class="badge exact">Exact</span>{/if}
       {/if}
     </footer>
@@ -453,6 +549,17 @@
     <div class="drop-overlay" aria-hidden="true"><div>Drop to open</div></div>
   {/if}
 </div>
+
+{#if presenting && paged}
+  <div class="presenter" role="dialog" aria-label="Presentation">
+    <PagedView state={paged} present onExternalLink={(uri) => (pendingLink = uri)} />
+    <div class="presenter-hint">Slide {paged.page + 1} of {paged.pageCount}. Press Esc to exit.</div>
+  </div>
+{/if}
+
+{#if notice}
+  <div class="toast" role="status">{notice}</div>
+{/if}
 
 {#if pendingLink}
   {@const link = pendingLink}
@@ -625,6 +732,87 @@
   }
   .swap.swapped {
     animation: fade 220ms var(--ease-out);
+  }
+  .swap.with-notes {
+    bottom: 132px;
+  }
+  .notes {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 132px;
+    padding: 12px 24px;
+    overflow-y: auto;
+    background: var(--surface);
+    border-top: 1px solid var(--gray-5);
+    animation: notes-in 200ms var(--ease-out);
+  }
+  .notes h2 {
+    margin: 0 0 6px;
+    font-size: var(--fs-1);
+    font-weight: 500;
+    color: var(--gray-8);
+  }
+  .notes p {
+    margin: 0;
+    max-width: 75ch;
+    white-space: pre-wrap;
+    color: var(--text-2);
+  }
+  .presenter {
+    position: fixed;
+    inset: 0;
+    z-index: 100;
+    background: #000;
+    animation: fade 200ms var(--ease-out);
+  }
+  .presenter-hint {
+    position: absolute;
+    right: 16px;
+    bottom: 12px;
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: oklch(20% 0.01 65 / 0.7);
+    color: var(--gray-11);
+    font-size: var(--fs-1);
+    font-variant-numeric: tabular-nums;
+    opacity: 0;
+    transition: opacity 200ms ease;
+  }
+  .presenter:hover .presenter-hint {
+    opacity: 1;
+  }
+  .toast {
+    position: fixed;
+    left: 50%;
+    bottom: 40px;
+    z-index: 60;
+    max-width: min(560px, calc(100vw - 32px));
+    padding: 10px 16px;
+    border-radius: var(--r-float);
+    background: var(--gray-4);
+    border: 1px solid var(--gray-6);
+    box-shadow: var(--shadow-float);
+    transform: translateX(-50%);
+    animation: toast-in 200ms var(--ease-out);
+    overflow-wrap: anywhere;
+  }
+  .status-btn {
+    height: 20px;
+    font-size: var(--fs-1);
+  }
+  @keyframes notes-in {
+    from {
+      transform: translateY(12px);
+      opacity: 0;
+    }
+  }
+  @keyframes toast-in {
+    from {
+      opacity: 0;
+      transform: translate(-50%, 8px);
+    }
   }
   .fast {
     position: absolute;
