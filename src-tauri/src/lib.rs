@@ -263,9 +263,13 @@ pub fn run() {
         ])
         .build(tauri::generate_context!())
         .expect("failed to start Lumen")
-        .run(|app, event| {
-            if let tauri::RunEvent::Exit = event {
-                app.state::<Arc<Registry>>().office().shutdown();
+        .run(|app, event| match event {
+            tauri::RunEvent::Exit => app.state::<Arc<Registry>>().office().shutdown(),
+            #[cfg(target_os = "macos")]
+            tauri::RunEvent::Opened { urls } => {
+                let paths: Vec<String> = urls.iter().filter_map(|u| u.to_file_path().ok()).map(|p| p.to_string_lossy().into_owned()).collect();
+                let _ = app.emit("open-paths", paths);
             }
+            _ => {}
         });
 }
