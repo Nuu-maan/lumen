@@ -29,6 +29,7 @@ memmap2 = "0.9"
 regex = "1"
 pulldown-cmark = { version = "0.13", default-features = false, features = ["html"] }
 mail-parser = "1"
+syntect = { version = "5", default-features = false, features = ["default-syntaxes", "regex-fancy"] }
 mupdf = { git = "https://github.com/messense/mupdf-rs", rev = "80e7792bc1b1b620fa03816fccf02ab4b7db7a1b", default-features = false, features = ["xps", "svg", "cbz", "img", "html", "epub", "base14-fonts"] }
 
 [profile.release]
@@ -38,5 +39,9 @@ codegen-units = 1
 panic = "abort"
 strip = true
 
+[profile.dev]
+debug = "line-tables-only"
+
 [profile.dev.package."*"]
 opt-level = 2
+debug = false
