@@ -1,0 +1,88 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm check
+      - run: pnpm build
+
+  rust:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libclang-dev
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - run: mkdir -p dist
+        shell: bash
+      - run: cargo test --manifest-path src-tauri/Cargo.toml
+
+  bench:
+    runs-on: windows-latest
+    needs: [frontend, rust]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: cargo build --release --features tauri/custom-protocol --bins --manifest-path src-tauri/Cargo.toml
+      - run: python bench/gen_samples.py
+      - name: Restore baseline from main
+        uses: actions/cache/restore@v4
+        with:
+          path: bench-baseline.json
+          key: bench-baseline-${{ github.run_id }}
+          restore-keys: bench-baseline-
+      - name: Run benchmarks (fails on >20% regression)
+        shell: bash
+        run: |
+          args="--out bench-results.json"
+          [ -f bench-baseline.json ] && args="$args --check bench-baseline.json"
+          src-tauri/target/release/bench.exe $args
+      - if: github.ref == 'refs/heads/main'
+        shell: bash
+        run: cp bench-results.json bench-baseline.json
+      - if: github.ref == 'refs/heads/main'
+        uses: actions/cache/save@v4
+        with:
+          path: bench-baseline.json
+          key: bench-baseline-${{ github.run_id }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bench-results
+          path: bench-results.json

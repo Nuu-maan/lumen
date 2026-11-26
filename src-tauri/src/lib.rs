@@ -220,7 +220,7 @@ pub fn run() {
         })
         .setup(|app| {
             std::thread::spawn(engines::office::ms_office_installed);
-            if let Ok(dir) = app.path().app_cache_dir() {
+            if let Some(dir) = std::env::var_os("LUMEN_CACHE_DIR").map(PathBuf::from).or_else(|| app.path().app_cache_dir().ok()) {
                 let _ = app.state::<Arc<Registry>>().cache_dir.set(dir);
             }
             let window = tauri::window::WindowBuilder::new(app, "main")
