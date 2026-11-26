@@ -354,7 +354,7 @@
         {:else if tab.view.kind === "office"}
           {@const view = tab.view}
           {@const t = tab}
-          {#if view.status === "failed" || (view.status === "notInstalled" && !view.fast)}
+          {#if !view.fast && view.status !== "converting"}
             <div class="center-card" role="alert">
               <Icon name="alert" size={20} />
               {#if view.status === "notInstalled"}
@@ -379,8 +379,13 @@
                 Showing a text preview. Install LibreOffice for the exact layout.
                 <button class="btn" onclick={() => openUrl("https://www.libreoffice.org/download/download-libreoffice/")}>Download LibreOffice</button>
               </div>
+            {:else if view.status === "failed"}
+              <div class="banner" role="status" title={view.message}>
+                Showing a text preview because the exact layout couldn't be rendered.
+                <button class="btn" onclick={() => load(t.id)}>Retry</button>
+              </div>
             {/if}
-            <div class="fast" class:with-banner={view.status === "notInstalled"}><HtmlView html={view.fast.html} title="{t.name} preview" /></div>
+            <div class="fast" class:with-banner={view.status !== "converting"}><HtmlView html={view.fast.html} title="{t.name} preview" /></div>
           {:else}
             <div class="skeleton-stage" aria-busy="true" aria-label="Rendering {t.name}">
               <div class="skeleton-page"><span></span><span></span><span></span><span></span><span></span></div>

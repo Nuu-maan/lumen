@@ -213,6 +213,10 @@ async function exact(id: number, password: string | undefined, converter: Conver
     if (result.status === "ok") void api.close(result.doc);
     return;
   }
+  if (result.status === "error" && t.view.kind === "office" && t.view.fast) {
+    t.view = { ...t.view, status: "failed", message: result.message };
+    return;
+  }
   const started = openTimes.get(id);
   if (started !== undefined && result.status === "ok") openTimes.set(-result.doc, started);
   applyPaged(t, result, converterLabel[converter], notes, t.view.kind === "office", converter, !!password);
