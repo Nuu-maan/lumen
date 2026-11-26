@@ -139,7 +139,8 @@
     const key = e.key.toLowerCase();
     if (mod && key === "o") return e.preventDefault(), void chooseFiles();
     if (mod && key === "w") return e.preventDefault(), tab && closeTab(tab.id);
-    if (mod && e.key === "Tab") return e.preventDefault(), cycleTab(e.shiftKey ? -1 : 1);
+    if (mod && (e.key === "Tab" || e.code === "Tab")) return e.preventDefault(), cycleTab(e.shiftKey ? -1 : 1);
+    if (e.ctrlKey && (e.key === "PageUp" || e.key === "PageDown")) return e.preventDefault(), cycleTab(e.key === "PageUp" ? -1 : 1);
     if (mod && key === "b") return e.preventDefault(), (sidebarOpen = !sidebarOpen);
     if (mod && key === "p") return e.preventDefault(), void print();
     if (mod && e.shiftKey && key === "s") return e.preventDefault(), void exportPdf();
