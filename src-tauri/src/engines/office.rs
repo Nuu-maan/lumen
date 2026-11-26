@@ -97,12 +97,33 @@ struct Worker {
 }
 
 impl Worker {
-    fn kill(mut self) {
-        let _ = self.python.kill();
-        let _ = self.soffice.kill();
-        let _ = self.python.wait();
-        let _ = self.soffice.wait();
+    fn kill(self) {
+        let Worker { mut soffice, mut python, stdin, .. } = self;
+        drop(stdin);
+        let deadline = Instant::now() + Duration::from_secs(3);
+        while matches!(python.try_wait(), Ok(None)) && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        let _ = python.kill();
+        let _ = python.wait();
+        kill_tree(&mut soffice);
+        let _ = soffice.wait();
     }
+}
+
+#[cfg(unix)]
+fn kill_tree(child: &mut Child) {
+    let _ = Command::new("kill").args(["-KILL", &format!("-{}", child.id())]).stderr(Stdio::null()).status();
+    let _ = child.kill();
+}
+
+#[cfg(windows)]
+fn kill_tree(child: &mut Child) {
+    let _ = hide_window(Command::new("taskkill").args(["/T", "/F", "/PID", &child.id().to_string()]))
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status();
+    let _ = child.kill();
 }
 
 pub struct Office {
@@ -154,17 +175,17 @@ impl Office {
         std::fs::write(&script, WORKER_SCRIPT).map_err(fail)?;
         let pipe = format!("lumen_{}", std::process::id());
         let profile = url_from_path(&self.work_dir.join("lo-profile"));
-        let soffice = hide_window(
-            Command::new(&install.soffice)
-                .args(["--headless", "--invisible", "--nologo", "--norestore", "--nodefault", "--nolockcheck", "--nofirststartwizard"])
-                .arg(format!("--accept=pipe,name={pipe};urp;"))
-                .arg(format!("-env:UserInstallation={profile}"))
-                .stdin(Stdio::null())
-                .stdout(Stdio::null())
-                .stderr(Stdio::null()),
-        )
-        .spawn()
-        .map_err(fail)?;
+        let mut soffice = Command::new(&install.soffice);
+        soffice
+            .args(["--headless", "--invisible", "--nologo", "--norestore", "--nodefault", "--nolockcheck", "--nofirststartwizard"])
+            .arg(format!("--accept=pipe,name={pipe};urp;"))
+            .arg(format!("-env:UserInstallation={profile}"))
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
+        #[cfg(unix)]
+        std::os::unix::process::CommandExt::process_group(&mut soffice, 0);
+        let soffice = hide_window(&mut soffice).spawn().map_err(fail)?;
         let mut python = hide_window(
             Command::new(&install.python).arg(&script).arg(&pipe).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::null()),
         )
