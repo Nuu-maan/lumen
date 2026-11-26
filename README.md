@@ -55,9 +55,9 @@ Most people keep four or five apps around just to *look* at files: a PDF reader,
 
 <div align="center">
 
-[![Download for Windows](https://img.shields.io/badge/Download-Windows-e0912f?style=for-the-badge)](https://github.com/Nuu-maan/lumen/releases/latest/download/Lumen_0.1.0_x64-setup.exe)
-[![Download for macOS](https://img.shields.io/badge/Download-macOS-1b1e24?style=for-the-badge)](https://github.com/Nuu-maan/lumen/releases/latest/download/Lumen_0.1.0_universal.dmg)
-[![Download for Linux](https://img.shields.io/badge/Download-Linux-1b1e24?style=for-the-badge)](https://github.com/Nuu-maan/lumen/releases/latest/download/Lumen_0.1.0_amd64.AppImage)
+[![Download for Windows](https://img.shields.io/badge/Download-Windows-e0912f?style=for-the-badge)](https://github.com/Nuu-maan/lumen/releases/latest/download/Lumen_0.1.1_x64-setup.exe)
+[![Download for macOS](https://img.shields.io/badge/Download-macOS-1b1e24?style=for-the-badge)](https://github.com/Nuu-maan/lumen/releases/latest/download/Lumen_0.1.1_universal.dmg)
+[![Download for Linux](https://img.shields.io/badge/Download-Linux-1b1e24?style=for-the-badge)](https://github.com/Nuu-maan/lumen/releases/latest/download/Lumen_0.1.1_amd64.AppImage)
 
 All downloads, including `.msi` and `.deb`, are on the **[Releases page](https://github.com/Nuu-maan/lumen/releases/latest)**.
 
@@ -65,14 +65,14 @@ All downloads, including `.msi` and `.deb`, are on the **[Releases page](https:/
 
 | System | File | Size |
 |---|---|---|
-| **Windows 10 / 11** (64-bit) | [`Lumen_0.1.0_x64-setup.exe`](https://github.com/Nuu-maan/lumen/releases/latest/download/Lumen_0.1.0_x64-setup.exe) (recommended) or [`.msi`](https://github.com/Nuu-maan/lumen/releases/latest/download/Lumen_0.1.0_x64_en-US.msi) for IT deployment | 5.8 MB |
-| **macOS 11+** (Apple Silicon and Intel) | [`Lumen_0.1.0_universal.dmg`](https://github.com/Nuu-maan/lumen/releases/latest/download/Lumen_0.1.0_universal.dmg) | 15.7 MB |
-| **Linux** (x86-64) | [`Lumen_0.1.0_amd64.AppImage`](https://github.com/Nuu-maan/lumen/releases/latest/download/Lumen_0.1.0_amd64.AppImage) or [`.deb`](https://github.com/Nuu-maan/lumen/releases/latest/download/Lumen_0.1.0_amd64.deb) for Debian and Ubuntu | 87 MB / 9.2 MB |
+| **Windows 10 / 11** (64-bit) | [`Lumen_0.1.1_x64-setup.exe`](https://github.com/Nuu-maan/lumen/releases/latest/download/Lumen_0.1.1_x64-setup.exe) (recommended) or [`.msi`](https://github.com/Nuu-maan/lumen/releases/latest/download/Lumen_0.1.1_x64_en-US.msi) for IT deployment | 5.8 MB |
+| **macOS 11+** (Apple Silicon and Intel) | [`Lumen_0.1.1_universal.dmg`](https://github.com/Nuu-maan/lumen/releases/latest/download/Lumen_0.1.1_universal.dmg) | 15.7 MB |
+| **Linux** (x86-64) | [`Lumen_0.1.1_amd64.AppImage`](https://github.com/Nuu-maan/lumen/releases/latest/download/Lumen_0.1.1_amd64.AppImage) or [`.deb`](https://github.com/Nuu-maan/lumen/releases/latest/download/Lumen_0.1.1_amd64.deb) for Debian and Ubuntu | 87 MB / 9.2 MB |
 
 <details open>
 <summary><b>Windows</b></summary>
 
-1. Download **`Lumen_0.1.0_x64-setup.exe`**.
+1. Download **`Lumen_0.1.1_x64-setup.exe`**.
 2. Double-click it. Lumen installs for your user account in a few seconds, with no admin rights needed, and adds shortcuts to the Start menu and desktop.
 3. If Windows shows **"Windows protected your PC"**, click **More info → Run anyway**. The warning appears because the installer isn't code-signed yet.
 4. To make Lumen the default for a file type, right-click a file → **Open with → Choose another app → Lumen**, and tick **Always use this app**.
@@ -84,7 +84,7 @@ Lumen uses Microsoft Edge WebView2, which comes with Windows 10 and 11. Uninstal
 <details>
 <summary><b>macOS</b></summary>
 
-1. Download **`Lumen_0.1.0_universal.dmg`** and open it.
+1. Download **`Lumen_0.1.1_universal.dmg`** and open it.
 2. Drag **Lumen** into the **Applications** folder.
 3. The first time you open it, macOS blocks it because the app isn't notarized yet. Open **System Settings → Privacy & Security**, scroll down, and click **Open Anyway** next to the message about Lumen.
 4. If macOS says the app **"is damaged and can't be opened"**, run this once in Terminal, then open Lumen again:
@@ -100,8 +100,8 @@ Lumen uses Microsoft Edge WebView2, which comes with Windows 10 and 11. Uninstal
 **AppImage** (any distribution):
 
 ```sh
-chmod +x Lumen_0.1.0_amd64.AppImage
-./Lumen_0.1.0_amd64.AppImage
+chmod +x Lumen_0.1.1_amd64.AppImage
+./Lumen_0.1.1_amd64.AppImage
 ```
 
 If it fails with a FUSE error, install `libfuse2` (`sudo apt install libfuse2t64` on Ubuntu 24.04, `libfuse2` on older releases).
@@ -109,7 +109,7 @@ If it fails with a FUSE error, install `libfuse2` (`sudo apt install libfuse2t64
 **Debian / Ubuntu:**
 
 ```sh
-sudo apt install ./Lumen_0.1.0_amd64.deb
+sudo apt install ./Lumen_0.1.1_amd64.deb
 ```
 
 Lumen then appears in your app launcher. It needs WebKitGTK 4.1, which `apt` installs automatically.
