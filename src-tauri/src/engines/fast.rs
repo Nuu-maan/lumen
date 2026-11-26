@@ -15,6 +15,7 @@ table{border-collapse:collapse;margin:0 0 1em;width:100%}
 td{border:1px solid #c8c8c8;padding:4px 6px;vertical-align:top}
 .slide{aspect-ratio:16/9;padding:48px 64px;overflow:hidden}
 .slide h2{margin-top:0}
+.notes{max-width:794px;margin:-12px auto 24px;padding:12px 16px;background:#f6f5f2;border-left:3px solid #b9b4aa;font-size:14px}
 </style>";
 
 #[derive(Serialize)]
@@ -189,6 +190,9 @@ pub fn pptx(path: &Path) -> Option<Fast> {
                     .join("\n")
             })
             .unwrap_or_default();
+        if !note.is_empty() {
+            out.push_str(&format!("<div class=\"notes\" aria-label=\"Notes for slide {}\"><b>Notes</b><p>{}</p></div>", i + 1, escape(&note)));
+        }
         notes.push(note);
     }
     Some(Fast { html: wrap(&out), notes })
@@ -243,5 +247,7 @@ mod tests {
         let (one, two, ten) = (fast.html.find("One").unwrap(), fast.html.find("Two").unwrap(), fast.html.find("Ten").unwrap());
         assert!(one < two && two < ten);
         assert_eq!(fast.notes, vec!["".to_string(), "Say hi".into(), "".into()]);
+        let (shown, ten) = (fast.html.find("<p>Say hi</p>").unwrap(), fast.html.find("Ten").unwrap());
+        assert!(two < shown && shown < ten, "{}", fast.html);
     }
 }
