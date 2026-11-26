@@ -99,6 +99,24 @@ fn runs(n: usize, mut f: impl FnMut() -> Option<f64>) -> Option<f64> {
     median((0..n).filter_map(|_| f()).collect())
 }
 
+fn calibrate() -> Option<f64> {
+    runs(7, || {
+        let t = Instant::now();
+        let mut x: u64 = 0x9E37_79B9_7F4A_7C15;
+        let mut v: Vec<u64> = (0..6_000_000)
+            .map(|_| {
+                x ^= x << 13;
+                x ^= x >> 7;
+                x ^= x << 17;
+                x
+            })
+            .collect();
+        v.sort_unstable();
+        std::hint::black_box(&v);
+        Some(t.elapsed().as_secs_f64() * 1000.0)
+    })
+}
+
 fn idle_ram_mb(cache: &Path) -> Option<f64> {
     let mut child = Command::new(app()).env("LUMEN_CACHE_DIR", cache).arg(sample("text-100p.pdf")).stdout(Stdio::null()).stderr(Stdio::null()).spawn().ok()?;
     std::thread::sleep(Duration::from_secs(6));
@@ -161,6 +179,7 @@ fn measure() -> BTreeMap<&'static str, f64> {
             r.insert(k, v);
         }
     };
+    put("calibration_ms", calibrate());
     put("installer_mb", installer_mb());
     put("binary_mb", std::fs::metadata(app()).ok().map(|m| m.len() as f64 / 1e6));
     let cache = fresh("cache");
@@ -197,6 +216,17 @@ fn main() {
     }
     let results = measure();
     let baseline: BTreeMap<String, f64> = arg("--check").and_then(|p| std::fs::read_to_string(p).ok()).and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default();
+    let speed = match (results.get("calibration_ms"), baseline.get("calibration_ms")) {
+        (Some(&now), Some(&then)) => {
+            println!("runner speed vs baseline: {:.2}x slower (baseline times scaled by this)", now / then);
+            Some(now / then)
+        }
+        _ if baseline.is_empty() => None,
+        _ => {
+            println!("baseline has no runner calibration: skipping the regression check this run");
+            None
+        }
+    };
     let mut regressions = Vec::new();
     println!("{:<30} {:>10} {:>10}  {:<6} {}", "metric", "value", "budget", "status", "vs baseline");
     for m in METRICS {
@@ -205,12 +235,13 @@ fn main() {
             continue;
         };
         let within = if v <= m.budget { "ok" } else { "OVER" };
-        let trend = match baseline.get(m.name) {
-            Some(&b) if v > b * REGRESSION && v - b > 5.0 => {
+        let scale = if m.unit == "ms" { speed.unwrap_or(1.0) } else { 1.0 };
+        let trend = match baseline.get(m.name).filter(|_| speed.is_some()).map(|b| b * scale) {
+            Some(b) if v > b * REGRESSION && v - b > 5.0 => {
                 regressions.push(format!("{}: {v:.1} vs baseline {b:.1}", m.name));
                 format!("REGRESSED from {b:.1}")
             }
-            Some(&b) => format!("{:+.0}%", (v / b - 1.0) * 100.0),
+            Some(b) => format!("{:+.0}%", (v / b - 1.0) * 100.0),
             None => String::new(),
         };
         println!("{:<30} {:>10.1} {:>7} {:<2}  {:<6} {}", m.name, v, m.budget, m.unit, within, trend);
