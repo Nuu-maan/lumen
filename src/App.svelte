@@ -182,8 +182,9 @@
   }
 
   onMount(() => {
+    const forwarded = listen<string[]>("open-paths", (e) => openAll(e.payload));
     const unlisten = [
-      listen<string[]>("open-paths", (e) => openAll(e.payload)),
+      forwarded,
       getCurrentWebview().onDragDropEvent((e) => {
         if (e.payload.type === "enter" || e.payload.type === "over") dragging = true;
         else if (e.payload.type === "leave") dragging = false;
@@ -193,7 +194,7 @@
         }
       }),
     ];
-    requestAnimationFrame(() => requestAnimationFrame(() => api.ready().then(openAll)));
+    requestAnimationFrame(() => requestAnimationFrame(() => forwarded.then(api.ready).then(openAll)));
     void api.msOfficeAvailable().then((v) => (msOffice = v));
     return () => unlisten.forEach((u) => u.then((f) => f()));
   });
