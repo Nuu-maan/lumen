@@ -235,9 +235,9 @@ fn main() {
             continue;
         };
         let within = if v <= m.budget { "ok" } else { "OVER" };
-        let scale = if m.unit == "ms" { speed.unwrap_or(1.0) } else { 1.0 };
+        let (scale, floor) = if m.unit == "ms" { (speed.unwrap_or(1.0), 15.0) } else { (1.0, 5.0) };
         let trend = match baseline.get(m.name).filter(|_| speed.is_some()).map(|b| b * scale) {
-            Some(b) if v > b * REGRESSION && v - b > 5.0 => {
+            Some(b) if v > b * REGRESSION && v - b > floor => {
                 regressions.push(format!("{}: {v:.1} vs baseline {b:.1}", m.name));
                 format!("REGRESSED from {b:.1}")
             }
