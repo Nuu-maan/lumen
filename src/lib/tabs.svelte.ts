@@ -117,9 +117,10 @@ export const openTimes = new Map<number, number>();
 
 export async function openPath(path: string) {
   const started = performance.now();
-  const existing = store.tabs.find((t) => t.path === path && t.view.kind !== "error");
+  const existing = store.tabs.find((t) => t.path === path);
   if (existing) {
     store.active = existing.id;
+    if (existing.view.kind === "error") await load(existing.id);
     return;
   }
   const tab: Tab = { id: nextId++, path, name: basename(path), file: null, view: { kind: "loading" }, doc: null };
