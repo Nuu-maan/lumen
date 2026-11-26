@@ -11,7 +11,7 @@ A fast, lightweight desktop viewer for PDF, Word, Excel, PowerPoint, e-books, em
 [![CI](https://github.com/Nuu-maan/lumen/actions/workflows/ci.yml/badge.svg)](https://github.com/Nuu-maan/lumen/actions/workflows/ci.yml)
 [![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-e0912f)](#license)
 ![Platforms](https://img.shields.io/badge/platforms-Windows%20%7C%20macOS%20%7C%20Linux-1b1e24)
-![Installer](https://img.shields.io/badge/installer-7.5%20MB-1b1e24)
+![Installer](https://img.shields.io/badge/installer-5.8%20MB-1b1e24)
 
 [Install](#install) · [Getting started](#getting-started) · [Formats](#supported-formats) · [Performance](#performance) · [Build from source](#building-from-source)
 
@@ -30,7 +30,7 @@ Most people keep four or five apps around just to *look* at files: a PDF reader,
 | **Instant** | The window appears in about 50 ms and the first page of a 100-page PDF is sharp in under 100 ms. A 500 MB log file shows its first screen in under 20 ms. |
 | **Faithful** | Word, Excel and PowerPoint files render through a real layout engine (LibreOffice, or Microsoft Office when installed), not a lookalike. Tables, columns, footnotes, headers and speaker notes come out where the author put them. |
 | **Honest** | A badge in the status bar always says which engine drew the page: *Exact*, *High fidelity* or *Fast preview*. You never mistake an approximation for the real thing. |
-| **Light** | A 7.5 MB installer that uses the webview already on your system. No Electron, no bundled browser. |
+| **Light** | A 5.8 MB installer that uses the webview already on your system. No Electron, no bundled browser. |
 | **Safe** | Documents are treated as untrusted: macros and PDF JavaScript never run, web content is sandboxed, and links ask before opening. |
 | **Viewer only** | No editing, no accounts, no cloud, no telemetry. |
 
@@ -65,7 +65,7 @@ All downloads, including `.msi` and `.deb`, are on the **[Releases page](https:/
 
 | System | File | Size |
 |---|---|---|
-| **Windows 10 / 11** (64-bit) | [`Lumen_0.1.0_x64-setup.exe`](https://github.com/Nuu-maan/lumen/releases/latest/download/Lumen_0.1.0_x64-setup.exe) (recommended) or [`.msi`](https://github.com/Nuu-maan/lumen/releases/latest/download/Lumen_0.1.0_x64_en-US.msi) for IT deployment | 7.5 MB |
+| **Windows 10 / 11** (64-bit) | [`Lumen_0.1.0_x64-setup.exe`](https://github.com/Nuu-maan/lumen/releases/latest/download/Lumen_0.1.0_x64-setup.exe) (recommended) or [`.msi`](https://github.com/Nuu-maan/lumen/releases/latest/download/Lumen_0.1.0_x64_en-US.msi) for IT deployment | 5.8 MB |
 | **macOS 11+** (Apple Silicon and Intel) | [`Lumen_0.1.0_universal.dmg`](https://github.com/Nuu-maan/lumen/releases/latest/download/Lumen_0.1.0_universal.dmg) | |
 | **Linux** (x86-64) | [`Lumen_0.1.0_amd64.AppImage`](https://github.com/Nuu-maan/lumen/releases/latest/download/Lumen_0.1.0_amd64.AppImage) or [`.deb`](https://github.com/Nuu-maan/lumen/releases/latest/download/Lumen_0.1.0_amd64.deb) for Debian and Ubuntu | |
 
@@ -182,7 +182,7 @@ Measured with `cargo run --release --bin bench`, which launches the real release
 
 | Scenario | Lumen | Budget |
 |---|---:|---:|
-| Installer size (NSIS) | **7.5 MB** | 25 MB |
+| Installer size (NSIS) | **5.8 MB** | 25 MB |
 | Window visible after launch | **52 ms** | 300 ms |
 | First page sharp, 100-page PDF | **80 ms** | 150 ms |
 | First page sharp, 137 MB PDF | **98 ms** | 400 ms |
