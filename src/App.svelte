@@ -5,12 +5,18 @@
   import { open as openDialog } from "@tauri-apps/plugin-dialog";
   import { openPath as systemOpen, openUrl } from "@tauri-apps/plugin-opener";
   import { api } from "./lib/api";
-  import { store, activeTab, openPath, load, closeTab, cycleTab, forgetRecent } from "./lib/tabs.svelte";
+  import { store, activeTab, openPath, load, closeTab, cycleTab, forgetRecent, openExtracted } from "./lib/tabs.svelte";
+  import { formatSize } from "./lib/format";
   import Icon from "./components/Icon.svelte";
   import Dialog from "./components/Dialog.svelte";
   import FindBar from "./components/FindBar.svelte";
   import PagedView from "./views/PagedView.svelte";
   import Sidebar from "./views/Sidebar.svelte";
+  import TextView from "./views/TextView.svelte";
+  import HtmlView from "./views/HtmlView.svelte";
+  import EmailView from "./views/EmailView.svelte";
+  import ImageView from "./views/ImageView.svelte";
+  import ArchiveView from "./views/ArchiveView.svelte";
 
   let sidebarOpen = $state(localStorage.getItem("lumen.sidebar") !== "0");
   let findOpen = $state(false);
@@ -22,10 +28,16 @@
 
   const tab = $derived(activeTab());
   const paged = $derived(tab?.view.kind === "paged" ? tab.view.state : null);
+  const image = $derived(tab?.view.kind === "image" ? tab.view.state : null);
+  const textFind = $derived(tab?.view.kind === "text" ? tab.view.find : null);
 
   $effect(() => localStorage.setItem("lumen.sidebar", sidebarOpen ? "1" : "0"));
   $effect(() => {
     pageInput = paged ? String(paged.page + 1) : "";
+  });
+  $effect(() => {
+    void store.active;
+    findOpen = false;
   });
   $effect(() => {
     document.title = tab ? `${tab.name} - Lumen` : "Lumen";
@@ -41,6 +53,7 @@
   }
 
   function zoom(direction: 1 | -1) {
+    if (image) return image.zoomStep(direction);
     if (!paged) return;
     const before = paged.zoom;
     paged.zoomStep(direction);
@@ -64,6 +77,16 @@
     if (mod && key === "w") return e.preventDefault(), tab && closeTab(tab.id);
     if (mod && e.key === "Tab") return e.preventDefault(), cycleTab(e.shiftKey ? -1 : 1);
     if (mod && key === "b") return e.preventDefault(), (sidebarOpen = !sidebarOpen);
+    if (textFind && mod && key === "f") return e.preventDefault(), (findOpen = true);
+    if (textFind && e.key === "F3") return e.preventDefault(), textFind.step(e.shiftKey ? -1 : 1);
+    if (image) {
+      if (mod && (e.key === "=" || e.key === "+")) return e.preventDefault(), image.zoomStep(1);
+      if (mod && e.key === "-") return e.preventDefault(), image.zoomStep(-1);
+      if (mod && e.key === "0") return e.preventDefault(), image.setZoom(1);
+      if (mod && e.key === "1") return e.preventDefault(), (image.fit = "width");
+      if (mod && e.key === "2") return e.preventDefault(), (image.fit = "page");
+      if (mod && key === "r") return e.preventDefault(), image.rotate();
+    }
     if (!paged) return;
     if (mod && key === "f") return e.preventDefault(), (findOpen = true);
     if (mod && (e.key === "=" || e.key === "+")) return e.preventDefault(), zoom(1);
@@ -119,11 +142,12 @@
       <button class="btn new-tab" title="Open file (Ctrl+O)" aria-label="Open file" onclick={chooseFiles}><Icon name="open" /></button>
     </header>
 
+    {#if paged || image || textFind}
     <div class="toolbar" role="toolbar" aria-label="View controls">
-      <button class="btn" aria-pressed={sidebarOpen} title="Sidebar (Ctrl+B)" aria-label="Toggle sidebar" onclick={() => (sidebarOpen = !sidebarOpen)} disabled={!paged}>
-        <Icon name="sidebar" />
-      </button>
       {#if paged}
+        <button class="btn" aria-pressed={sidebarOpen} title="Sidebar (Ctrl+B)" aria-label="Toggle sidebar" onclick={() => (sidebarOpen = !sidebarOpen)}>
+          <Icon name="sidebar" />
+        </button>
         <span class="sep"></span>
         <form class="pager" onsubmit={submitPage}>
           <input class="field page-input" bind:value={pageInput} aria-label="Page number" onfocus={(e) => e.currentTarget.select()} />
@@ -155,8 +179,21 @@
         </button>
         <span class="grow"></span>
         <button class="btn" title="Find (Ctrl+F)" aria-label="Find" onclick={() => (findOpen = true)}><Icon name="search" /></button>
+      {:else if image}
+        <button class="btn" title="Zoom out (Ctrl+-)" aria-label="Zoom out" onclick={() => image.zoomStep(-1)}><Icon name="zoomOut" /></button>
+        <button class="btn zoom-label" title="Actual size (Ctrl+0)" onclick={() => image.setZoom(1)}>{Math.round(image.zoom * 100)}%</button>
+        <button class="btn" title="Zoom in (Ctrl+=)" aria-label="Zoom in" onclick={() => image.zoomStep(1)}><Icon name="zoomIn" /></button>
+        <button class="btn" aria-pressed={image.fit === "page"} title="Fit to window (Ctrl+2)" aria-label="Fit to window" onclick={() => (image.fit = "page")}>
+          <Icon name="fitPage" />
+        </button>
+        <span class="sep"></span>
+        <button class="btn" title="Rotate (Ctrl+R)" aria-label="Rotate clockwise" onclick={() => image.rotate()}><Icon name="rotate" /></button>
+      {:else if textFind}
+        <span class="grow"></span>
+        <button class="btn" title="Find (Ctrl+F)" aria-label="Find" onclick={() => (findOpen = true)}><Icon name="search" /></button>
       {/if}
     </div>
+    {/if}
 
     <main class="main">
       {#if paged && sidebarOpen}<Sidebar state={paged} />{/if}
@@ -185,6 +222,46 @@
               }}
             />
           {/if}
+        {:else if tab.view.kind === "text"}
+          {@const view = tab.view}
+          {#key tab.id}<TextView doc={view.doc} first={view.first} find={view.find} />{/key}
+          {#if findOpen}
+            <FindBar
+              query={view.find.query}
+              count={view.find.hits.length}
+              index={view.find.index}
+              searching={view.find.searching}
+              onsearch={(q) => view.find.search(q)}
+              onnext={(d) => view.find.step(d)}
+              onclose={() => {
+                findOpen = false;
+                void view.find.search("");
+              }}
+            />
+          {/if}
+        {:else if tab.view.kind === "html"}
+          <HtmlView html={tab.view.html} title={tab.name} />
+        {:else if tab.view.kind === "email"}
+          {@const view = tab.view}
+          <EmailView email={view.email} onopen={(i) => openExtracted(view.doc, i)} />
+        {:else if tab.view.kind === "image"}
+          {@const view = tab.view}
+          {#if view.state.failed}
+            {@const t = tab}
+            <div class="center-card" role="alert">
+              <Icon name="alert" size={20} />
+              <h1>Couldn't display {t.name}</h1>
+              <p class="muted">This system's web view can't decode {t.file?.format.label ?? "this image"}. Open it with the system app instead.</p>
+              <div class="row">
+                <button class="btn primary" onclick={() => systemOpen(t.path)}>Open with system app</button>
+              </div>
+            </div>
+          {:else}
+            {#key tab.id}<ImageView doc={view.doc} state={view.state} name={tab.name} />{/key}
+          {/if}
+        {:else if tab.view.kind === "archive"}
+          {@const view = tab.view}
+          <ArchiveView entries={view.entries} onopen={(i) => openExtracted(view.doc, i)} />
         {:else if tab.view.kind === "password"}
           {@const t = tab}
           <form
@@ -225,9 +302,16 @@
         {#if paged}
           <span class="tnum">Page {paged.page + 1} of {paged.pageCount}</span>
           <span class="tnum">{zoomLabel}</span>
+        {:else if image?.natural}
+          <span class="tnum">{image.natural.w} × {image.natural.h} px</span>
+          <span class="tnum">{Math.round(image.zoom * 100)}%</span>
+        {:else if tab.view.kind === "text" && tab.file?.format.id === "code"}
+          <span>{tab.view.language}</span>
         {/if}
+        {#if tab.file}<span class="tnum">{formatSize(tab.file.size)}</span>{/if}
         <span class="grow"></span>
-        {#if tab.view.kind === "paged"}<span class="badge exact">{tab.view.engine}</span>{/if}
+        {#if tab.view.kind === "paged"}<span class="badge exact">{tab.view.engine}</span>
+        {:else if tab.view.kind !== "loading" && tab.view.kind !== "error" && tab.view.kind !== "password"}<span class="badge exact">Exact</span>{/if}
       {/if}
     </footer>
   {:else}

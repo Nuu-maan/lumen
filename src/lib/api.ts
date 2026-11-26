@@ -52,8 +52,40 @@ export type PagedResult =
   | { status: "wrongPassword" }
   | { status: "error"; message: string };
 
+export interface Lines {
+  start: number;
+  lines: string[];
+  total: number;
+  complete: boolean;
+  tokens: [number, number][][] | null;
+  highlighting: boolean;
+}
+
+export interface Email {
+  subject: string;
+  from: string;
+  to: string;
+  cc: string;
+  date: string;
+  html: string;
+  attachments: { index: number; name: string; size: number }[];
+}
+
+export interface ArchiveEntry {
+  index: number;
+  path: string;
+  size: number;
+  packed: number;
+  dir: boolean;
+}
+
 export type Opened =
   | ({ kind: "paged"; file: FileInfo; engine: string } & PagedResult)
+  | { kind: "text"; file: FileInfo; doc: number; first: Lines; language: string }
+  | { kind: "html"; file: FileInfo; html: string }
+  | { kind: "email"; file: FileInfo; doc: number; email: Email }
+  | { kind: "image"; file: FileInfo; doc: number }
+  | { kind: "archive"; file: FileInfo; doc: number; entries: ArchiveEntry[] }
   | { kind: "unsupported"; file: FileInfo | null; message: string };
 
 export type SearchEvent = { type: "hits"; page: number; rects: Rect[] } | { type: "done" };
@@ -63,6 +95,8 @@ export const protocolBase = isWindows ? "http://lumen.localhost" : "lumen://loca
 
 export const tileUrl = (doc: number, page: number, scale: number, x: number, y: number, w: number, h: number) =>
   `${protocolBase}/tile/${doc}/${page}/${Math.round(scale * 1000)}/${x}/${y}/${w}/${h}`;
+
+export const fileUrl = (doc: number) => `${protocolBase}/file/${doc}`;
 
 export const pageUrl = (doc: number, page: number, width: number) => `${protocolBase}/page/${doc}/${page}/${width}`;
 
@@ -75,6 +109,9 @@ export const api = {
     invoke<void>("set_viewport", { doc, first, last, scale }),
   pageText: (doc: number, page: number) => invoke<TextLine[]>("page_text", { doc, page }),
   pageLinks: (doc: number, page: number) => invoke<Link[]>("page_links", { doc, page }),
+  textLines: (doc: number, start: number, count: number) => invoke<Lines>("text_lines", { doc, start, count }),
+  textSearch: (doc: number, needle: string) => invoke<[number, number][]>("text_search", { doc, needle }),
+  extract: (doc: number, index: number) => invoke<string>("extract_item", { doc, index }),
   outline: (doc: number) => invoke<OutlineItem[]>("outline", { doc }),
   search: (doc: number, needle: string, fromPage: number, onEvent: (e: SearchEvent) => void) => {
     const channel = new Channel<SearchEvent>();

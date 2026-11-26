@@ -1,9 +1,41 @@
-import { api, type FileInfo } from "./api";
+import { api, type ArchiveEntry, type Email, type FileInfo, type Lines } from "./api";
+import { ImageState } from "./image.svelte";
 import { PagedState } from "./paged.svelte";
+
+export class TextFind {
+  query = $state("");
+  hits = $state<[number, number][]>([]);
+  index = $state(-1);
+  searching = $state(false);
+
+  constructor(private doc: number) {}
+
+  async search(query: string) {
+    this.query = query;
+    this.hits = [];
+    this.index = -1;
+    if (!query) return;
+    this.searching = true;
+    const hits = await api.textSearch(this.doc, query).catch(() => []);
+    if (this.query !== query) return;
+    this.hits = hits;
+    this.index = hits.length ? 0 : -1;
+    this.searching = false;
+  }
+
+  step(direction: 1 | -1) {
+    if (this.hits.length) this.index = (this.index + direction + this.hits.length) % this.hits.length;
+  }
+}
 
 export type TabView =
   | { kind: "loading" }
   | { kind: "paged"; state: PagedState; engine: string }
+  | { kind: "text"; doc: number; first: Lines; language: string; find: TextFind }
+  | { kind: "html"; html: string }
+  | { kind: "email"; doc: number; email: Email }
+  | { kind: "image"; doc: number; state: ImageState }
+  | { kind: "archive"; doc: number; entries: ArchiveEntry[] }
   | { kind: "password"; wrong: boolean }
   | { kind: "error"; message: string };
 
@@ -27,7 +59,7 @@ export const store = $state({
 
 export const activeTab = () => store.tabs.find((t) => t.id === store.active) ?? null;
 
-const basename = (p: string) => p.split(/[\/]/).pop() || p;
+const basename = (p: string) => p.split(/[\\/]/).pop() || p;
 
 function remember(path: string) {
   store.recent = [path, ...store.recent.filter((p) => p !== path)].slice(0, 12);
@@ -69,16 +101,30 @@ export async function load(id: number, password?: string) {
   }
   const t = find();
   if (!t) {
-    if (result.kind === "paged" && result.status === "ok") void api.close(result.doc);
+    if ("doc" in result && typeof result.doc === "number") void api.close(result.doc);
     return;
   }
   t.file = result.file;
+  const started = openTimes.get(id);
+  if (started !== undefined && "doc" in result && typeof result.doc === "number") openTimes.set(-result.doc, started);
   if (result.kind === "unsupported") {
     t.view = { kind: "error", message: result.message };
+  } else if (result.kind === "text") {
+    t.doc = result.doc;
+    t.view = { kind: "text", doc: result.doc, first: result.first, language: result.language, find: new TextFind(result.doc) };
+  } else if (result.kind === "html") {
+    t.view = { kind: "html", html: result.html };
+  } else if (result.kind === "email") {
+    t.doc = result.doc;
+    t.view = { kind: "email", doc: result.doc, email: result.email };
+  } else if (result.kind === "image") {
+    t.doc = result.doc;
+    t.view = { kind: "image", doc: result.doc, state: new ImageState() };
+  } else if (result.kind === "archive") {
+    t.doc = result.doc;
+    t.view = { kind: "archive", doc: result.doc, entries: result.entries };
   } else if (result.status === "ok") {
     t.doc = result.doc;
-    const started = openTimes.get(id);
-    if (started !== undefined) openTimes.set(-result.doc, started);
     t.view = { kind: "paged", state: new PagedState(result.doc, result.pages, result.reflowable), engine: result.engine };
   } else if (result.status === "needsPassword" || result.status === "wrongPassword") {
     t.view = { kind: "password", wrong: result.status === "wrongPassword" };
@@ -99,4 +145,9 @@ export function cycleTab(direction: 1 | -1) {
   if (store.tabs.length < 2) return;
   const index = store.tabs.findIndex((t) => t.id === store.active);
   store.active = store.tabs[(index + direction + store.tabs.length) % store.tabs.length].id;
+}
+
+export async function openExtracted(doc: number, index: number) {
+  const path = await api.extract(doc, index);
+  await openPath(path);
 }

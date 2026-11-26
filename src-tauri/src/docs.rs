@@ -1,4 +1,6 @@
+use crate::engines::email::Part;
 use crate::engines::mupdf::MupdfDoc;
+use crate::engines::text::TextDoc;
 use crate::engines::{OpenError, PageSize, PagedEngine, Rect};
 use crate::render::{self, Scheduler};
 use parking_lot::{Mutex, RwLock};
@@ -38,11 +40,20 @@ impl PagedDoc {
     }
 }
 
+#[derive(Clone)]
+pub enum Doc {
+    Paged(Arc<PagedDoc>),
+    Text(Arc<TextDoc>),
+    File(PathBuf, &'static str),
+    Email(Arc<Vec<Part>>),
+    Archive(PathBuf),
+}
+
 pub struct Registry {
     pub scheduler: Arc<Scheduler>,
-    paged: RwLock<HashMap<u32, Arc<PagedDoc>>>,
-    files: RwLock<HashMap<u32, PathBuf>>,
+    docs: RwLock<HashMap<u32, Doc>>,
     next_id: AtomicU32,
+    pub cache_dir: std::sync::OnceLock<PathBuf>,
 }
 
 #[derive(Serialize)]
@@ -67,40 +78,49 @@ impl Registry {
         let threads = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4).clamp(2, 6);
         Registry {
             scheduler: Scheduler::new(threads),
-            paged: RwLock::new(HashMap::new()),
-            files: RwLock::new(HashMap::new()),
+            docs: RwLock::new(HashMap::new()),
             next_id: AtomicU32::new(1),
+            cache_dir: std::sync::OnceLock::new(),
         }
     }
 
-    pub fn alloc_id(&self) -> u32 {
-        self.next_id.fetch_add(1, Ordering::Relaxed)
+    pub fn insert(&self, doc: Doc) -> u32 {
+        let id = self.next_id.fetch_add(1, Ordering::Relaxed);
+        self.docs.write().insert(id, doc);
+        id
+    }
+
+    pub fn get(&self, id: u32) -> Option<Doc> {
+        self.docs.read().get(&id).cloned()
     }
 
     pub fn paged(&self, id: u32) -> Option<Arc<PagedDoc>> {
-        self.paged.read().get(&id).cloned()
+        match self.get(id)? {
+            Doc::Paged(d) => Some(d),
+            _ => None,
+        }
     }
 
-    pub fn file(&self, id: u32) -> Option<PathBuf> {
-        self.files.read().get(&id).cloned()
+    pub fn text(&self, id: u32) -> Option<Arc<TextDoc>> {
+        match self.get(id)? {
+            Doc::Text(d) => Some(d),
+            _ => None,
+        }
     }
 
-    pub fn register_file(&self, id: u32, path: PathBuf) {
-        self.files.write().insert(id, path);
+    pub fn scratch_dir(&self, id: u32) -> PathBuf {
+        let base = self.cache_dir.get().cloned().unwrap_or_else(|| std::env::temp_dir().join("lumen"));
+        base.join("extracted").join(format!("{}-{id}", std::process::id()))
     }
 
     pub async fn open_paged(&self, path: PathBuf, password: Option<String>) -> OpenPagedResult {
         let opened = self.scheduler.run(render::PRIO_VISIBLE, move || MupdfDoc::open(&path, password.as_deref())).await;
         match opened {
             Ok(engine) => {
-                let id = self.alloc_id();
-                let info = PagedInfo {
-                    doc: id,
-                    pages: (0..engine.page_count()).map(|i| engine.page_size(i)).collect(),
-                    reflowable: engine.is_reflowable(),
-                };
-                self.paged.write().insert(id, Arc::new(PagedDoc::new(engine)));
-                OpenPagedResult::Ok(info)
+                let pages = (0..engine.page_count()).map(|i| engine.page_size(i)).collect();
+                let reflowable = engine.is_reflowable();
+                let doc = self.insert(Doc::Paged(Arc::new(PagedDoc::new(engine))));
+                OpenPagedResult::Ok(PagedInfo { doc, pages, reflowable })
             }
             Err(OpenError::NeedsPassword) => OpenPagedResult::NeedsPassword,
             Err(OpenError::WrongPassword) => OpenPagedResult::WrongPassword,
@@ -109,12 +129,13 @@ impl Registry {
     }
 
     pub fn close(&self, id: u32) {
-        self.paged.write().remove(&id);
-        self.files.write().remove(&id);
+        self.docs.write().remove(&id);
+        let _ = std::fs::remove_dir_all(self.scratch_dir(id));
     }
 }
 
 pub enum TileRequest {
+    File,
     Tile { page: usize, scale: f32, rect: Rect },
     Page { page: usize, width: u32 },
 }
@@ -122,6 +143,7 @@ pub enum TileRequest {
 pub fn render_request(doc: &Arc<PagedDoc>, request: TileRequest, prio_override: Option<u8>) -> Option<(u8, Box<dyn FnOnce() -> Result<Vec<u8>, String> + Send>)> {
     let doc = doc.clone();
     match request {
+        TileRequest::File => None,
         TileRequest::Tile { page, scale, rect } => {
             if page >= doc.engine.page_count() {
                 return None;
@@ -172,6 +194,7 @@ pub fn parse_tile_path(path: &str) -> Option<(u32, TileRequest)> {
                 rect: Rect { x: num(4)?, y: num(5)?, w: num(6)?.clamp(1.0, 2048.0), h: num(7)?.clamp(1.0, 2048.0) },
             },
         )),
+        &"file" if parts.len() >= 2 => Some((parts[1].parse().ok()?, TileRequest::File)),
         &"page" if parts.len() == 4 => Some((
             parts[1].parse().ok()?,
             TileRequest::Page { page: parts[2].parse().ok()?, width: (num(3)? as u32).clamp(8, 4096) },
