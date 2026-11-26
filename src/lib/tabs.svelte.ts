@@ -1,4 +1,4 @@
-import { api, type ArchiveEntry, type Email, type FileInfo, type Lines } from "./api";
+import { api, converterLabel, type ArchiveEntry, type Converter, type Email, type Fast, type FileInfo, type Lines, type PagedResult } from "./api";
 import { ImageState } from "./image.svelte";
 import { PagedState } from "./paged.svelte";
 
@@ -30,13 +30,14 @@ export class TextFind {
 
 export type TabView =
   | { kind: "loading" }
-  | { kind: "paged"; state: PagedState; engine: string }
+  | { kind: "paged"; state: PagedState; engine: string; notes?: string[]; swapped?: boolean }
+  | { kind: "office"; fast: Fast | null; converter: Converter; status: "converting" | "notInstalled" | "failed"; message?: string }
   | { kind: "text"; doc: number; first: Lines; language: string; find: TextFind }
   | { kind: "html"; html: string }
   | { kind: "email"; doc: number; email: Email }
   | { kind: "image"; doc: number; state: ImageState }
   | { kind: "archive"; doc: number; entries: ArchiveEntry[] }
-  | { kind: "password"; wrong: boolean }
+  | { kind: "password"; wrong: boolean; office?: Converter }
   | { kind: "error"; message: string };
 
 export interface Tab {
@@ -109,6 +110,16 @@ export async function load(id: number, password?: string) {
   if (started !== undefined && "doc" in result && typeof result.doc === "number") openTimes.set(-result.doc, started);
   if (result.kind === "unsupported") {
     t.view = { kind: "error", message: result.message };
+  } else if (result.kind === "office") {
+    if (result.encrypted && !password) {
+      t.view = { kind: "password", wrong: false, office: result.converter };
+      return;
+    }
+    t.view = { kind: "office", fast: result.fast, converter: result.converter, status: "converting" };
+    if (started !== undefined && result.fast) {
+      requestAnimationFrame(() => void api.benchMark("office_fast", performance.now() - started));
+    }
+    await exact(id, password, result.converter, result.fast?.notes);
   } else if (result.kind === "text") {
     t.doc = result.doc;
     t.view = { kind: "text", doc: result.doc, first: result.first, language: result.language, find: new TextFind(result.doc) };
@@ -123,13 +134,53 @@ export async function load(id: number, password?: string) {
   } else if (result.kind === "archive") {
     t.doc = result.doc;
     t.view = { kind: "archive", doc: result.doc, entries: result.entries };
-  } else if (result.status === "ok") {
+  } else {
+    applyPaged(t, result, result.engine, result.notes ?? undefined);
+  }
+}
+
+function applyPaged(t: Tab, result: PagedResult, engine: string, notes?: string[], swapped = false, office?: Converter, triedPassword = false) {
+  if (result.status === "ok") {
     t.doc = result.doc;
-    t.view = { kind: "paged", state: new PagedState(result.doc, result.pages, result.reflowable), engine: result.engine };
+    t.view = { kind: "paged", state: new PagedState(result.doc, result.pages, result.reflowable), engine, notes, swapped };
   } else if (result.status === "needsPassword" || result.status === "wrongPassword") {
-    t.view = { kind: "password", wrong: result.status === "wrongPassword" };
+    t.view = { kind: "password", wrong: result.status === "wrongPassword" || triedPassword, office };
   } else {
     t.view = { kind: "error", message: result.message };
+  }
+}
+
+async function exact(id: number, password: string | undefined, converter: Converter, notes?: string[]) {
+  const tab = store.tabs.find((t) => t.id === id);
+  if (!tab) return;
+  let result: PagedResult;
+  try {
+    result = await api.officeExact(tab.path, password, converter);
+  } catch (e) {
+    const t = store.tabs.find((x) => x.id === id);
+    if (t?.view.kind === "office") {
+      t.view = { ...t.view, status: String(e) === "not-installed" ? "notInstalled" : "failed", message: String(e) };
+    }
+    return;
+  }
+  const t = store.tabs.find((x) => x.id === id);
+  if (!t) {
+    if (result.status === "ok") void api.close(result.doc);
+    return;
+  }
+  const started = openTimes.get(id);
+  if (started !== undefined && result.status === "ok") openTimes.set(-result.doc, started);
+  applyPaged(t, result, converterLabel[converter], notes, t.view.kind === "office", converter, !!password);
+}
+
+export async function retryOffice(id: number, password?: string) {
+  const t = store.tabs.find((x) => x.id === id);
+  if (!t) return;
+  if (t.view.kind === "password" && t.view.office) {
+    const converter = t.view.office;
+    await exact(id, password, password ? "libreOffice" : converter);
+  } else {
+    await load(id, password);
   }
 }
 

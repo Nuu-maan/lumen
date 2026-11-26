@@ -54,6 +54,7 @@ pub struct Registry {
     docs: RwLock<HashMap<u32, Doc>>,
     next_id: AtomicU32,
     pub cache_dir: std::sync::OnceLock<PathBuf>,
+    office: std::sync::OnceLock<Arc<crate::engines::office::Office>>,
 }
 
 #[derive(Serialize)]
@@ -81,6 +82,7 @@ impl Registry {
             docs: RwLock::new(HashMap::new()),
             next_id: AtomicU32::new(1),
             cache_dir: std::sync::OnceLock::new(),
+            office: std::sync::OnceLock::new(),
         }
     }
 
@@ -108,9 +110,16 @@ impl Registry {
         }
     }
 
+    pub fn cache_root(&self) -> PathBuf {
+        self.cache_dir.get().cloned().unwrap_or_else(|| std::env::temp_dir().join("lumen"))
+    }
+
     pub fn scratch_dir(&self, id: u32) -> PathBuf {
-        let base = self.cache_dir.get().cloned().unwrap_or_else(|| std::env::temp_dir().join("lumen"));
-        base.join("extracted").join(format!("{}-{id}", std::process::id()))
+        self.cache_root().join("extracted").join(format!("{}-{id}", std::process::id()))
+    }
+
+    pub fn office(&self) -> &Arc<crate::engines::office::Office> {
+        self.office.get_or_init(|| crate::engines::office::Office::new(self.cache_root().join("office")))
     }
 
     pub async fn open_paged(&self, path: PathBuf, password: Option<String>) -> OpenPagedResult {

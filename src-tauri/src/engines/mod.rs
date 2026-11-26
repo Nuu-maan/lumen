@@ -1,8 +1,10 @@
 pub mod archive;
 pub mod email;
+pub mod fast;
 pub mod highlight;
 pub mod markup;
 pub mod mupdf;
+pub mod office;
 pub mod text;
 
 use serde::Serialize;
