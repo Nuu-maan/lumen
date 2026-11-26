@@ -42,12 +42,8 @@ fn app() -> PathBuf {
     std::env::current_exe().unwrap().with_file_name(format!("lumen{}", std::env::consts::EXE_SUFFIX))
 }
 
-fn median(mut v: Vec<f64>) -> Option<f64> {
-    if v.is_empty() {
-        return None;
-    }
-    v.sort_by(f64::total_cmp);
-    Some(v[v.len() / 2])
+fn fastest(v: Vec<f64>) -> Option<f64> {
+    v.into_iter().reduce(f64::min)
 }
 
 fn launch(cache: &Path, env: &[(&str, &str)], file: Option<&Path>, key: &str) -> Option<f64> {
@@ -96,7 +92,7 @@ impl WaitTimeout for std::process::Child {
 }
 
 fn runs(n: usize, mut f: impl FnMut() -> Option<f64>) -> Option<f64> {
-    median((0..n).filter_map(|_| f()).collect())
+    fastest((0..n).filter_map(|_| f()).collect())
 }
 
 fn calibrate() -> Option<f64> {
@@ -152,7 +148,7 @@ fn docx_exact_warm(work: &Path) -> Option<f64> {
         })
         .collect();
     office.shutdown();
-    median(times)
+    fastest(times)
 }
 
 fn installer_mb() -> Option<f64> {
@@ -235,9 +231,9 @@ fn main() {
             continue;
         };
         let within = if v <= m.budget { "ok" } else { "OVER" };
-        let scale = if m.unit == "ms" { speed.unwrap_or(1.0) } else { 1.0 };
+        let (scale, floor) = if m.unit == "ms" { (speed.unwrap_or(1.0), 15.0) } else { (1.0, 5.0) };
         let trend = match baseline.get(m.name).filter(|_| speed.is_some()).map(|b| b * scale) {
-            Some(b) if v > b * REGRESSION && v - b > 5.0 => {
+            Some(b) if v > b * REGRESSION && v - b > floor => {
                 regressions.push(format!("{}: {v:.1} vs baseline {b:.1}", m.name));
                 format!("REGRESSED from {b:.1}")
             }

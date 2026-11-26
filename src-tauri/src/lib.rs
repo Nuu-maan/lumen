@@ -18,6 +18,17 @@ use tauri::{Emitter, Manager, State};
 
 struct Launch(Instant);
 
+struct Pending(parking_lot::Mutex<Option<Vec<String>>>);
+
+fn deliver(app: &tauri::AppHandle, paths: Vec<String>) {
+    let pending = app.state::<Pending>();
+    let mut queue = pending.0.lock();
+    match queue.as_mut() {
+        Some(queue) => queue.extend(paths),
+        None => drop(app.emit("open-paths", paths)),
+    }
+}
+
 type Reg<'a> = State<'a, Arc<Registry>>;
 
 #[tauri::command]
@@ -147,13 +158,15 @@ fn path_args(args: impl Iterator<Item = String>, cwd: &std::path::Path) -> Vec<S
 }
 
 #[tauri::command]
-fn app_ready(app: tauri::AppHandle, launch: State<Launch>) -> Vec<String> {
+fn app_ready(app: tauri::AppHandle, launch: State<Launch>, pending: State<Pending>) -> Vec<String> {
     if std::env::var_os("LUMEN_BENCH_STARTUP").is_some() {
         println!("ready_ms={}", launch.0.elapsed().as_millis());
         app.exit(0);
     }
     let cwd = std::env::current_dir().unwrap_or_default();
-    path_args(std::env::args().skip(1), &cwd)
+    let mut paths = path_args(std::env::args().skip(1), &cwd);
+    paths.extend(pending.0.lock().take().unwrap_or_default());
+    paths
 }
 
 #[tauri::command]
@@ -207,7 +220,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, argv, cwd| {
             let paths = path_args(argv.into_iter().skip(1), std::path::Path::new(&cwd));
-            let _ = app.emit("open-paths", paths);
+            deliver(app, paths);
             if let Some(w) = app.get_window("main") {
                 let _ = w.unminimize();
                 let _ = w.set_focus();
@@ -241,6 +254,7 @@ pub fn run() {
             Ok(())
         })
         .manage(launch)
+        .manage(Pending(parking_lot::Mutex::new(Some(Vec::new()))))
         .manage(registry)
         .invoke_handler(tauri::generate_handler![
             app_ready,
@@ -268,7 +282,7 @@ pub fn run() {
             #[cfg(target_os = "macos")]
             tauri::RunEvent::Opened { urls } => {
                 let paths: Vec<String> = urls.iter().filter_map(|u| u.to_file_path().ok()).map(|p| p.to_string_lossy().into_owned()).collect();
-                let _ = app.emit("open-paths", paths);
+                deliver(app, paths);
             }
             _ => {}
         });

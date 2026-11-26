@@ -68,8 +68,7 @@
     return { slots, tops, height: y - gap + pad, width: contentW };
   });
 
-  function slotAt(y: number) {
-    const tops = layout.tops;
+  function slotAt(y: number, tops = layout.tops) {
     let lo = 0;
     let hi = tops.length - 1;
     while (lo < hi) {
@@ -135,31 +134,38 @@
     });
   });
 
-  let zoomAnchor: { page: number; fy: number; fx: number; cy: number; cx: number } | null = null;
+  type Anchor = { page: number; fy: number; fx: number; cy: number; cx: number; pinTop: boolean };
+  let zoomAnchor: Anchor | null = null;
+  let restoreTo: Anchor | null = null;
+  let lastLayout: typeof layout | null = null;
 
-  function anchorAt(cx: number, cy: number) {
-    const slot = layout.slots[slotAt(scrollTop + cy)];
+  function anchorAt(cx: number, cy: number, l = layout, pinTop = false): Anchor | null {
+    const top = scroller.scrollTop;
+    const left = scroller.scrollLeft;
+    const slot = l.slots[slotAt(top + cy, l.tops)];
     if (!slot) return null;
-    return {
-      page: slot.index,
-      fy: (scrollTop + cy - slot.top) / slot.h,
-      fx: (scrollLeft + cx - slot.left) / slot.w,
-      cy,
-      cx,
-    };
+    return { page: slot.index, fy: (top + cy - slot.top) / slot.h, fx: (left + cx - slot.left) / slot.w, cy, cx, pinTop };
   }
 
   $effect.pre(() => {
-    void css;
-    const a = zoomAnchor;
-    if (!a || !scroller) return;
+    const prev = lastLayout;
+    lastLayout = layout;
+    if (!scroller || !prev || present) return;
+    const a = zoomAnchor ?? restoreTo ?? untrack(() => anchorAt(viewW / 2, viewH / 3, prev, s.fit === "page"));
     zoomAnchor = null;
+    if (!a) return;
+    const queued = restoreTo !== null;
+    restoreTo = a;
+    if (queued) return;
     queueMicrotask(() => {
+      const a = restoreTo!;
+      restoreTo = null;
       const slot = layout.slots[shown.indexOf(a.page)];
       if (!slot) return;
-      scroller.scrollTop = slot.top + a.fy * slot.h - a.cy;
+      scroller.scrollTop = a.pinTop ? slot.top - pad / 2 : slot.top + a.fy * slot.h - a.cy;
       scroller.scrollLeft = slot.left + a.fx * slot.w - a.cx;
-      onScroll();
+      scrollTop = scroller.scrollTop;
+      scrollLeft = scroller.scrollLeft;
     });
   });
 
@@ -270,6 +276,26 @@
     }
   }
 
+  function onCopy(e: ClipboardEvent) {
+    const sel = getSelection();
+    if (!sel?.rangeCount || sel.isCollapsed || !e.clipboardData) return;
+    const range = sel.getRangeAt(0);
+    const lines: string[] = [];
+    for (const span of scroller.querySelectorAll(".text-layer span")) {
+      const text = span.firstChild;
+      if (!text || !range.intersectsNode(text)) continue;
+      const part = document.createRange();
+      part.selectNodeContents(text);
+      if (range.compareBoundaryPoints(Range.START_TO_START, part) > 0) part.setStart(range.startContainer, range.startOffset);
+      if (range.compareBoundaryPoints(Range.END_TO_END, part) < 0) part.setEnd(range.endContainer, range.endOffset);
+      lines.push(part.toString());
+    }
+    const copied = lines.filter(Boolean).join("\n");
+    if (!copied) return;
+    e.preventDefault();
+    e.clipboardData.setData("text/plain", copied);
+  }
+
   function followLink(link: Link, e: MouseEvent) {
     e.preventDefault();
     if (link.page !== null) s.goTo(link.page);
@@ -329,6 +355,7 @@
   bind:this={scroller}
   onscroll={onScroll}
   onwheel={onWheel}
+  oncopy={onCopy}
   tabindex="-1"
   role="document"
   aria-label="Document pages"
@@ -382,7 +409,7 @@
                   style:top="{line.rect.y * css}px"
                   style:font-size="{line.rect.h * css}px"
                   style:transform="scaleX({line.sx})">{line.text}</span
-                ><br />
+                >
               {/each}
             </div>
           {/if}
@@ -469,9 +496,6 @@
     color: transparent;
     transform-origin: 0 0;
     cursor: text;
-  }
-  .text-layer br {
-    display: none;
   }
   .text-layer ::selection {
     background: oklch(60% 0.15 240 / 0.35);

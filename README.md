@@ -136,7 +136,7 @@ On Windows with **Microsoft Office** installed, you can render through Office it
 | Action | Shortcut |
 |---|---|
 | Open file | Ctrl+O |
-| Close tab / next tab / previous tab | Ctrl+W / Ctrl+Tab / Ctrl+Shift+Tab |
+| Close tab / next tab / previous tab | Ctrl+W / Ctrl+Tab or Ctrl+PageDown / Ctrl+Shift+Tab or Ctrl+PageUp |
 | Find, next, previous | Ctrl+F, Enter or F3, Shift+Enter or Shift+F3 |
 | Zoom in / out / actual size | Ctrl+= / Ctrl+- / Ctrl+0, or Ctrl+wheel and pinch |
 | Fit width / fit page | Ctrl+1 / Ctrl+2 |

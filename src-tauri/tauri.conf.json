@@ -132,8 +132,7 @@
         ],
         "name": "Other document",
         "description": "Document",
-        "role": "Viewer",
-        "mimeType": "application/octet-stream"
+        "role": "Viewer"
       },
       {
         "ext": [
@@ -165,7 +164,8 @@
     },
     "linux": {
       "deb": {
-        "depends": []
+        "depends": [],
+        "desktopTemplate": "lumen.desktop"
       }
     },
     "macOS": {

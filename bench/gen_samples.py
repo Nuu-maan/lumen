@@ -297,7 +297,7 @@ def main():
         w, h = 1200, 900
         raw = bytes(rnd.getrandbits(8) for _ in range(w * h * 3)) if i == 0 else os.urandom(w * h * 3)
         image = (w, h, zlib.compress(raw, 1))
-        pages.append((b"q 468 351 0 0 72 380 cm /Im1 Do Q\n" + text_page(i + 1, rnd), image))
+        pages.append((b"q 468 0 0 351 72 380 cm /Im1 Do Q\n" + text_page(i + 1, rnd), image))
     write_pdf(os.path.join(OUT, "images-100mb.pdf"), pages)
     write_text_samples()
     write_office_samples(rnd)
