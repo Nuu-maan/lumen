@@ -7,3 +7,4 @@ target/
 .claude/settings.local.json
 bench/samples/
 __pycache__/
+.playwright-mcp/
