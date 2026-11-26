@@ -143,6 +143,7 @@ CT_XLSX = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
 <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
 <Override PartName="/xl/worksheets/sheet2.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>
 </Types>"""
 
 ROOT_RELS = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -158,7 +159,17 @@ WORKBOOK_RELS = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
 <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
 <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet2.xml"/>
+<Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
 </Relationships>"""
+
+STYLES = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+<fonts count="1"><font><sz val="11"/><name val="Calibri"/></font></fonts>
+<fills count="1"><fill><patternFill patternType="none"/></fill></fills>
+<borders count="1"><border/></borders>
+<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>
+<cellXfs count="2"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="14" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/></cellXfs>
+</styleSheet>"""
 
 CT_DOCX = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
@@ -168,10 +179,10 @@ CT_DOCX = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 </Types>"""
 
 
-def cell(ref, value):
+def cell(ref, value, style=0):
     if isinstance(value, str):
         return '<c r="%s" t="inlineStr"><is><t>%s</t></is></c>' % (ref, value)
-    return '<c r="%s"><v>%s</v></c>' % (ref, value)
+    return '<c r="%s"%s><v>%s</v></c>' % (ref, ' s="%d"' % style if style else "", value)
 
 
 def write_xlsx(path, rows):
@@ -188,7 +199,7 @@ def write_xlsx(path, rows):
         units = i % 50 + 1
         price = 2.5 + (i % 7)
         values = [i - 1, 45658 + i % 365, regions[i % 4], products[i % 4], units, price, round(units * price, 2), "Shipped" if i % 3 else "Open"]
-        parts.append('<row r="%d">%s</row>' % (i, "".join(cell("%s%d" % (c, i), v) for c, v in zip(cols, values))))
+        parts.append('<row r="%d">%s</row>' % (i, "".join(cell("%s%d" % (c, i), v, 1 if c == "B" else 0) for c, v in zip(cols, values))))
     parts.append("</sheetData></worksheet>")
     summary = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData><row r="1">%s</row></sheetData></worksheet>' % (cell("A1", "Rows") + cell("B1", rows))
     with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as z:
@@ -198,6 +209,7 @@ def write_xlsx(path, rows):
         z.writestr("xl/_rels/workbook.xml.rels", WORKBOOK_RELS)
         z.writestr("xl/worksheets/sheet1.xml", "".join(parts))
         z.writestr("xl/worksheets/sheet2.xml", summary)
+        z.writestr("xl/styles.xml", STYLES)
 
 
 def write_docx(path, pages, rnd):
