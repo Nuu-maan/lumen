@@ -7,6 +7,7 @@
     count,
     index,
     searching,
+    more = false,
     onsearch,
     onnext,
     onclose,
@@ -15,6 +16,7 @@
     count: number;
     index: number;
     searching: boolean;
+    more?: boolean;
     onsearch: (q: string) => void;
     onnext: (dir: 1 | -1) => void;
     onclose: () => void;
@@ -51,7 +53,7 @@
   }
 
   const status = $derived(
-    !query.trim() ? "" : count ? `${index + 1} of ${count}${searching ? "+" : ""}` : searching ? "Searching…" : "No matches",
+    !query.trim() ? "" : count ? `${index + 1} of ${count}${searching || more ? "+" : ""}` : searching ? "Searching…" : "No matches",
   );
 </script>
 

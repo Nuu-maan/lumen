@@ -47,9 +47,9 @@ async fn text_lines(reg: Reg<'_>, doc: u32, start: usize, count: usize) -> Resul
 }
 
 #[tauri::command]
-async fn text_search(reg: Reg<'_>, doc: u32, needle: String) -> Result<Vec<(usize, usize)>, String> {
+async fn text_search(reg: Reg<'_>, doc: u32, needle: String, limit: usize) -> Result<Vec<(usize, usize)>, String> {
     let d = reg.text(doc).ok_or("document is closed")?;
-    Ok(reg.scheduler.run(render::PRIO_NEAR, move || d.search(&needle, 50_000)).await)
+    Ok(reg.scheduler.run(render::PRIO_NEAR, move || d.search(&needle, limit)).await)
 }
 
 #[tauri::command]

@@ -340,6 +340,7 @@
               count={view.find.hits.length}
               index={view.find.index}
               searching={view.find.searching}
+              more={view.find.capped}
               onsearch={(q) => view.find.search(q)}
               onnext={(d) => view.find.step(d)}
               onclose={() => {

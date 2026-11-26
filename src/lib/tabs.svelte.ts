@@ -2,11 +2,14 @@ import { api, converterLabel, type ArchiveEntry, type Converter, type Email, typ
 import { ImageState } from "./image.svelte";
 import { PagedState } from "./paged.svelte";
 
+const TEXT_HIT_LIMIT = 50_000;
+
 export class TextFind {
   query = $state("");
   hits = $state<[number, number][]>([]);
   index = $state(-1);
   searching = $state(false);
+  capped = $state(false);
 
   constructor(private doc: number) {}
 
@@ -14,11 +17,13 @@ export class TextFind {
     this.query = query;
     this.hits = [];
     this.index = -1;
+    this.capped = false;
     if (!query) return;
     this.searching = true;
-    const hits = await api.textSearch(this.doc, query).catch(() => []);
+    const hits = await api.textSearch(this.doc, query, TEXT_HIT_LIMIT).catch(() => []);
     if (this.query !== query) return;
     this.hits = hits;
+    this.capped = hits.length >= TEXT_HIT_LIMIT;
     this.index = hits.length ? 0 : -1;
     this.searching = false;
   }
