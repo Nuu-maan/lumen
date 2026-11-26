@@ -1,7 +1,9 @@
 use crate::docs::{Doc, OpenPagedResult, Registry};
 use crate::engines::text::{Lines, TextDoc};
 use crate::engines::office::{self, ConvertError, Converter};
+use crate::engines::sheet::{SheetDoc, SheetInfo};
 use crate::engines::{archive, email, fast, markup};
+use crate::formats::Family;
 use crate::formats::{Engine, Format};
 use crate::render;
 use crate::sniff;
@@ -47,6 +49,13 @@ pub enum Opened {
         fast: Option<fast::Fast>,
         encrypted: bool,
         converter: Converter,
+    },
+    Sheet {
+        file: FileInfo,
+        doc: u32,
+        names: Vec<String>,
+        info: SheetInfo,
+        converter: Option<Converter>,
     },
     Email {
         file: FileInfo,
@@ -115,6 +124,25 @@ fn converted_path(reg: &Registry, key: &str) -> PathBuf {
     reg.cache_root().join("converted").join(format!("{key}.pdf"))
 }
 
+async fn open_sheet(reg: &Arc<Registry>, path: &Path, delimited_tab: Option<bool>) -> Result<(u32, Vec<String>, SheetInfo), String> {
+    let path = path.to_path_buf();
+    let opened = reg
+        .scheduler
+        .run(render::PRIO_VISIBLE, move || {
+            let doc = match delimited_tab {
+                Some(tab) => SheetDoc::open_delimited(&path, tab),
+                None => SheetDoc::open_workbook(&path),
+            }?;
+            let info = doc.info(0)?;
+            Ok::<_, String>((doc, info))
+        })
+        .await;
+    opened.map(|(doc, info)| {
+        let names = doc.names().to_vec();
+        (reg.insert(Doc::Sheet(Arc::new(doc))), names, info)
+    })
+}
+
 pub async fn open(reg: &Arc<Registry>, path: PathBuf, password: Option<String>, prefer_ms_office: bool) -> Opened {
     let sniffed = match sniff::sniff(&path) {
         Ok(Some(s)) => s,
@@ -174,6 +202,17 @@ pub async fn open(reg: &Arc<Registry>, path: PathBuf, password: Option<String>, 
                 Err(e) => unsupported(Some(file), e),
             }
         }
+        Engine::Office if format.family == Family::Spreadsheet && !sniffed.encrypted => {
+            let converter = pick_converter(prefer_ms_office);
+            match open_sheet(reg, &path, None).await {
+                Ok((doc, names, info)) => Opened::Sheet { file, doc, names, info, converter: Some(converter) },
+                Err(_) => Opened::Office { file, fast: None, encrypted: false, converter },
+            }
+        }
+        Engine::Sheet => match open_sheet(reg, &path, Some(format.id == "tsv")).await {
+            Ok((doc, names, info)) => Opened::Sheet { file, doc, names, info, converter: None },
+            Err(e) => unsupported(Some(file), e),
+        },
         Engine::Office => {
             let converter = pick_converter(prefer_ms_office);
             let id = format.id;
@@ -203,7 +242,6 @@ pub async fn open(reg: &Arc<Registry>, path: PathBuf, password: Option<String>, 
             }
             Opened::Office { file, fast, encrypted, converter }
         }
-        Engine::Sheet => unsupported(Some(file), "Support for this format is coming in a later build."),
     }
 }
 

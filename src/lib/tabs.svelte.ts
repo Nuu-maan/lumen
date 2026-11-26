@@ -1,4 +1,4 @@
-import { api, converterLabel, type ArchiveEntry, type Converter, type Email, type Fast, type FileInfo, type Lines, type PagedResult } from "./api";
+import { api, converterLabel, type ArchiveEntry, type Converter, type Email, type Fast, type FileInfo, type Lines, type PagedResult, type SheetInfo } from "./api";
 import { ImageState } from "./image.svelte";
 import { PagedState } from "./paged.svelte";
 
@@ -28,12 +28,48 @@ export class TextFind {
   }
 }
 
+export class SheetState {
+  readonly doc: number;
+  readonly names: string[];
+  readonly converter: Converter | null;
+  sheet = $state(0);
+  infos = $state<Record<number, SheetInfo>>({});
+  mode = $state<"grid" | "print">("grid");
+  print = $state<PagedState | "converting" | { error: string } | null>(null);
+
+  constructor(doc: number, names: string[], info: SheetInfo, converter: Converter | null) {
+    this.doc = doc;
+    this.names = names;
+    this.converter = converter;
+    this.infos[0] = info;
+  }
+
+  async select(sheet: number) {
+    this.sheet = sheet;
+    if (!this.infos[sheet]) this.infos[sheet] = await api.sheetInfo(this.doc, sheet).catch(() => ({ rows: 0, cols: 0, frozenRows: 0, frozenCols: 0 }));
+  }
+
+  async showPrint(path: string) {
+    this.mode = "print";
+    if (this.print !== null && !(typeof this.print === "object" && "error" in this.print)) return;
+    if (!this.converter) return;
+    this.print = "converting";
+    try {
+      const result = await api.officeExact(path, undefined, this.converter);
+      this.print = result.status === "ok" ? new PagedState(result.doc, result.pages, result.reflowable) : { error: "This workbook is password protected." };
+    } catch (e) {
+      this.print = { error: String(e) === "not-installed" ? "Install LibreOffice to see the print layout." : String(e) };
+    }
+  }
+}
+
 export type TabView =
   | { kind: "loading" }
   | { kind: "paged"; state: PagedState; engine: string; notes?: string[]; swapped?: boolean }
   | { kind: "office"; fast: Fast | null; converter: Converter; status: "converting" | "notInstalled" | "failed"; message?: string }
   | { kind: "text"; doc: number; first: Lines; language: string; find: TextFind }
   | { kind: "html"; html: string }
+  | { kind: "sheet"; state: SheetState }
   | { kind: "email"; doc: number; email: Email }
   | { kind: "image"; doc: number; state: ImageState }
   | { kind: "archive"; doc: number; entries: ArchiveEntry[] }
@@ -123,6 +159,9 @@ export async function load(id: number, password?: string) {
   } else if (result.kind === "text") {
     t.doc = result.doc;
     t.view = { kind: "text", doc: result.doc, first: result.first, language: result.language, find: new TextFind(result.doc) };
+  } else if (result.kind === "sheet") {
+    t.doc = result.doc;
+    t.view = { kind: "sheet", state: new SheetState(result.doc, result.names, result.info, result.converter) };
   } else if (result.kind === "html") {
     t.view = { kind: "html", html: result.html };
   } else if (result.kind === "email") {
@@ -189,6 +228,7 @@ export function closeTab(id: number) {
   if (index < 0) return;
   const [tab] = store.tabs.splice(index, 1);
   if (tab.doc !== null) void api.close(tab.doc);
+  if (tab.view.kind === "sheet" && tab.view.state.print instanceof PagedState) void api.close(tab.view.state.print.doc);
   if (store.active === id) store.active = store.tabs[Math.min(index, store.tabs.length - 1)]?.id ?? 0;
 }
 

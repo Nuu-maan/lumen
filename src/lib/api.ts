@@ -79,6 +79,13 @@ export interface ArchiveEntry {
   dir: boolean;
 }
 
+export interface SheetInfo {
+  rows: number;
+  cols: number;
+  frozenRows: number;
+  frozenCols: number;
+}
+
 export type Converter = "libreOffice" | "msOffice";
 
 export interface Fast {
@@ -96,6 +103,7 @@ export type Opened =
   | ({ kind: "paged"; file: FileInfo; engine: string; notes?: string[] | null } & PagedResult)
   | { kind: "text"; file: FileInfo; doc: number; first: Lines; language: string }
   | { kind: "html"; file: FileInfo; html: string }
+  | { kind: "sheet"; file: FileInfo; doc: number; names: string[]; info: SheetInfo; converter: Converter | null }
   | { kind: "email"; file: FileInfo; doc: number; email: Email }
   | { kind: "image"; file: FileInfo; doc: number }
   | { kind: "archive"; file: FileInfo; doc: number; entries: ArchiveEntry[] }
@@ -128,6 +136,9 @@ export const api = {
   pageLinks: (doc: number, page: number) => invoke<Link[]>("page_links", { doc, page }),
   textLines: (doc: number, start: number, count: number) => invoke<Lines>("text_lines", { doc, start, count }),
   textSearch: (doc: number, needle: string) => invoke<[number, number][]>("text_search", { doc, needle }),
+  sheetInfo: (doc: number, sheet: number) => invoke<SheetInfo>("sheet_info", { doc, sheet }),
+  sheetCells: (doc: number, sheet: number, rows: [number, number], cols: [number, number]) =>
+    invoke<string[][]>("sheet_cells", { doc, sheet, rows, cols }),
   extract: (doc: number, index: number) => invoke<string>("extract_item", { doc, index }),
   outline: (doc: number) => invoke<OutlineItem[]>("outline", { doc }),
   search: (doc: number, needle: string, fromPage: number, onEvent: (e: SearchEvent) => void) => {

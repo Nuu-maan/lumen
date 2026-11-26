@@ -6,3 +6,4 @@ target/
 *.log
 .claude/settings.local.json
 bench/samples/
+__pycache__/

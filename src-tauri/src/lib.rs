@@ -53,6 +53,19 @@ async fn text_search(reg: Reg<'_>, doc: u32, needle: String) -> Result<Vec<(usiz
 }
 
 #[tauri::command]
+async fn sheet_info(reg: Reg<'_>, doc: u32, sheet: usize) -> Result<engines::sheet::SheetInfo, String> {
+    let d = reg.sheet(doc).ok_or("document is closed")?;
+    reg.scheduler.run(render::PRIO_VISIBLE, move || d.info(sheet)).await
+}
+
+#[tauri::command]
+async fn sheet_cells(reg: Reg<'_>, doc: u32, sheet: usize, rows: [usize; 2], cols: [usize; 2]) -> Result<Vec<Vec<String>>, String> {
+    let d = reg.sheet(doc).ok_or("document is closed")?;
+    let (rows, cols) = (rows[0]..rows[1].min(rows[0] + 2000), cols[0]..cols[1].min(cols[0] + 256));
+    reg.scheduler.run(render::PRIO_VISIBLE, move || d.cells(sheet, rows, cols)).await
+}
+
+#[tauri::command]
 async fn extract_item(reg: Reg<'_>, doc: u32, index: usize) -> Result<String, String> {
     let reg = reg.inner().clone();
     reg.clone().scheduler.run(render::PRIO_VISIBLE, move || open::extract(&reg, doc, index).map(|p| p.to_string_lossy().into_owned())).await
@@ -123,13 +136,18 @@ fn search(reg: Reg<'_>, doc: u32, needle: String, from_page: usize, on_event: Ch
     Ok(())
 }
 
+fn path_args(args: impl Iterator<Item = String>, cwd: &std::path::Path) -> Vec<String> {
+    args.filter(|a| !a.starts_with('-')).map(|a| cwd.join(a).to_string_lossy().into_owned()).collect()
+}
+
 #[tauri::command]
 fn app_ready(app: tauri::AppHandle, launch: State<Launch>) -> Vec<String> {
     if std::env::var_os("LUMEN_BENCH_STARTUP").is_some() {
         println!("ready_ms={}", launch.0.elapsed().as_millis());
         app.exit(0);
     }
-    std::env::args().skip(1).filter(|a| !a.starts_with('-')).collect()
+    let cwd = std::env::current_dir().unwrap_or_default();
+    path_args(std::env::args().skip(1), &cwd)
 }
 
 #[tauri::command]
@@ -181,8 +199,8 @@ pub fn run() {
     let registry = Arc::new(Registry::new());
     let protocol_registry = registry.clone();
     tauri::Builder::default()
-        .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
-            let paths: Vec<String> = argv.into_iter().skip(1).filter(|a| !a.starts_with('-')).collect();
+        .plugin(tauri_plugin_single_instance::init(|app, argv, cwd| {
+            let paths = path_args(argv.into_iter().skip(1), std::path::Path::new(&cwd));
             let _ = app.emit("open-paths", paths);
             if let Some(w) = app.get_window("main") {
                 let _ = w.unminimize();
@@ -228,6 +246,8 @@ pub fn run() {
             text_lines,
             text_search,
             extract_item,
+            sheet_info,
+            sheet_cells,
             set_viewport,
             page_text,
             page_links,
