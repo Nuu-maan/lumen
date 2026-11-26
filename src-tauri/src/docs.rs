@@ -19,13 +19,14 @@ pub struct Viewport {
 
 pub struct PagedDoc {
     pub engine: MupdfDoc,
+    pub source: PathBuf,
     pub viewport: Mutex<Viewport>,
     pub search_gen: AtomicU64,
 }
 
 impl PagedDoc {
-    pub fn new(engine: MupdfDoc) -> Self {
-        PagedDoc { engine, viewport: Mutex::new(Viewport { first: 0, last: 2, scale: 1.0 }), search_gen: AtomicU64::new(0) }
+    pub fn new(engine: MupdfDoc, source: PathBuf) -> Self {
+        PagedDoc { engine, source, viewport: Mutex::new(Viewport { first: 0, last: 2, scale: 1.0 }), search_gen: AtomicU64::new(0) }
     }
 
     fn page_priority(&self, page: usize) -> Option<u8> {
@@ -131,12 +132,13 @@ impl Registry {
     }
 
     pub async fn open_paged(&self, path: PathBuf, password: Option<String>) -> OpenPagedResult {
+        let source = path.clone();
         let opened = self.scheduler.run(render::PRIO_VISIBLE, move || MupdfDoc::open(&path, password.as_deref())).await;
         match opened {
             Ok(engine) => {
                 let pages = (0..engine.page_count()).map(|i| engine.page_size(i)).collect();
                 let reflowable = engine.is_reflowable();
-                let doc = self.insert(Doc::Paged(Arc::new(PagedDoc::new(engine))));
+                let doc = self.insert(Doc::Paged(Arc::new(PagedDoc::new(engine, source))));
                 OpenPagedResult::Ok(PagedInfo { doc, pages, reflowable })
             }
             Err(OpenError::NeedsPassword) => OpenPagedResult::NeedsPassword,

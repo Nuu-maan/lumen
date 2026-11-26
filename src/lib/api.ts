@@ -139,6 +139,7 @@ export const api = {
   sheetInfo: (doc: number, sheet: number) => invoke<SheetInfo>("sheet_info", { doc, sheet }),
   sheetCells: (doc: number, sheet: number, rows: [number, number], cols: [number, number]) =>
     invoke<string[][]>("sheet_cells", { doc, sheet, rows, cols }),
+  exportPdf: (doc: number, target: string) => invoke<void>("export_pdf", { doc, target }),
   extract: (doc: number, index: number) => invoke<string>("extract_item", { doc, index }),
   outline: (doc: number) => invoke<OutlineItem[]>("outline", { doc }),
   search: (doc: number, needle: string, fromPage: number, onEvent: (e: SearchEvent) => void) => {

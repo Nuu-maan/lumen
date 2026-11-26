@@ -66,6 +66,12 @@ async fn sheet_cells(reg: Reg<'_>, doc: u32, sheet: usize, rows: [usize; 2], col
 }
 
 #[tauri::command]
+async fn export_pdf(reg: Reg<'_>, doc: u32, target: String) -> Result<(), String> {
+    let d = reg.paged(doc).ok_or("document is closed")?;
+    reg.scheduler.run(render::PRIO_VISIBLE, move || d.engine.export_pdf(&d.source, std::path::Path::new(&target))).await
+}
+
+#[tauri::command]
 async fn extract_item(reg: Reg<'_>, doc: u32, index: usize) -> Result<String, String> {
     let reg = reg.inner().clone();
     reg.clone().scheduler.run(render::PRIO_VISIBLE, move || open::extract(&reg, doc, index).map(|p| p.to_string_lossy().into_owned())).await
@@ -246,6 +252,7 @@ pub fn run() {
             text_lines,
             text_search,
             extract_item,
+            export_pdf,
             sheet_info,
             sheet_cells,
             set_viewport,

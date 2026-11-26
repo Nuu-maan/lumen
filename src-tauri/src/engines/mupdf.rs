@@ -47,6 +47,16 @@ impl MupdfDoc {
         f(&page).ok()
     }
 
+    pub fn export_pdf(&self, source: &Path, target: &Path) -> Result<(), String> {
+        let doc = self.doc.lock();
+        if doc.0.is_pdf() {
+            return std::fs::copy(source, target).map(|_| ()).map_err(|e| e.to_string());
+        }
+        let target = target.to_str().ok_or("The target path is not valid Unicode.")?;
+        let pdf = doc.0.convert_to_pdf(0, self.sizes.len() as i32 - 1, 0).map_err(err)?;
+        pdf.save(target).map_err(err)
+    }
+
     pub fn is_reflowable(&self) -> bool {
         self.doc.lock().0.is_reflowable().unwrap_or(false)
     }

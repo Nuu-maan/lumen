@@ -188,3 +188,33 @@ input {
     animation: none !important;
   }
 }
+
+#print-root {
+  display: none;
+}
+
+@media print {
+  @page {
+    margin: 0;
+  }
+  html,
+  body {
+    height: auto;
+    overflow: visible;
+    background: #fff;
+  }
+  #app {
+    display: none;
+  }
+  #print-root {
+    display: block;
+  }
+  .print-sheet {
+    break-after: page;
+    display: flex;
+    justify-content: center;
+  }
+  .print-sheet:last-child {
+    break-after: auto;
+  }
+}
