@@ -8,7 +8,7 @@
   import { openPath as systemOpen, openUrl } from "@tauri-apps/plugin-opener";
   import { api, converterLabel } from "./lib/api";
   import { store, activeTab, openPath, load, closeTab, cycleTab, forgetRecent, openExtracted, retryOffice } from "./lib/tabs.svelte";
-  import { formatSize } from "./lib/format";
+  import { formatSize, kbd } from "./lib/format";
   import { PagedState, type Fit } from "./lib/paged.svelte";
   import SheetView from "./views/SheetView.svelte";
   import Icon from "./components/Icon.svelte";
@@ -213,12 +213,12 @@
           <button class="tab-label" title={t.path} onclick={() => (store.active = t.id)} onauxclick={(e) => e.button === 1 && closeTab(t.id)}>
             {t.name}
           </button>
-          <button class="tab-close btn" aria-label="Close {t.name}" title="Close tab (Ctrl+W)" onclick={() => closeTab(t.id)}>
+          <button class="tab-close btn" aria-label="Close {t.name}" title="Close tab ({kbd('W')})" onclick={() => closeTab(t.id)}>
             <Icon name="close" size={14} />
           </button>
         </div>
       {/each}
-      <button class="btn new-tab" title="Open file (Ctrl+O)" aria-label="Open file" onclick={chooseFiles}><Icon name="open" /></button>
+      <button class="btn new-tab" title="Open file ({kbd('O')})" aria-label="Open file" onclick={chooseFiles}><Icon name="open" /></button>
     </header>
 
     {#if paged || image || textFind || sheet?.converter}
@@ -236,7 +236,7 @@
         {#if paged}<span class="sep"></span>{/if}
       {/if}
       {#if paged}
-        <button class="btn" aria-pressed={sidebarOpen} title="Sidebar (Ctrl+B)" aria-label="Toggle sidebar" onclick={() => (sidebarOpen = !sidebarOpen)}>
+        <button class="btn" aria-pressed={sidebarOpen} title="Sidebar ({kbd('B')})" aria-label="Toggle sidebar" onclick={() => (sidebarOpen = !sidebarOpen)}>
           <Icon name="sidebar" />
         </button>
         <span class="sep"></span>
@@ -245,17 +245,17 @@
           <span class="muted">of {paged.pageCount}</span>
         </form>
         <span class="sep"></span>
-        <button class="btn" title="Zoom out (Ctrl+-)" aria-label="Zoom out" onclick={() => zoom(-1)}><Icon name="zoomOut" /></button>
-        <button class="btn zoom-label" title="Actual size (Ctrl+0)" onclick={() => pagedView?.zoomTo(1)}>{zoomLabel}</button>
-        <button class="btn" title="Zoom in (Ctrl+=)" aria-label="Zoom in" onclick={() => zoom(1)}><Icon name="zoomIn" /></button>
-        <button class="btn" aria-pressed={paged.fit === "width"} title="Fit width (Ctrl+1)" aria-label="Fit width" onclick={() => (paged.fit = "width")}>
+        <button class="btn" title="Zoom out ({kbd('-')})" aria-label="Zoom out" onclick={() => zoom(-1)}><Icon name="zoomOut" /></button>
+        <button class="btn zoom-label" title="Actual size ({kbd('0')})" onclick={() => pagedView?.zoomTo(1)}>{zoomLabel}</button>
+        <button class="btn" title="Zoom in ({kbd('=')})" aria-label="Zoom in" onclick={() => zoom(1)}><Icon name="zoomIn" /></button>
+        <button class="btn" aria-pressed={paged.fit === "width"} title="Fit width ({kbd('1')})" aria-label="Fit width" onclick={() => (paged.fit = "width")}>
           <Icon name="fitWidth" />
         </button>
-        <button class="btn" aria-pressed={paged.fit === "page"} title="Fit page (Ctrl+2)" aria-label="Fit page" onclick={() => (paged.fit = "page")}>
+        <button class="btn" aria-pressed={paged.fit === "page"} title="Fit page ({kbd('2')})" aria-label="Fit page" onclick={() => (paged.fit = "page")}>
           <Icon name="fitPage" />
         </button>
         <span class="sep"></span>
-        <button class="btn" title="Rotate (Ctrl+R)" aria-label="Rotate clockwise" onclick={() => paged.rotate()}><Icon name="rotate" /></button>
+        <button class="btn" title="Rotate ({kbd('R')})" aria-label="Rotate clockwise" onclick={() => paged.rotate()}><Icon name="rotate" /></button>
         <button
           class="btn"
           aria-pressed={paged.mode === "single"}
@@ -275,23 +275,23 @@
         {#if isDeck}
           <button class="btn" title="Present full screen (F5)" onclick={() => present(true)}><Icon name="present" /> Present</button>
         {/if}
-        <button class="btn" title="Print (Ctrl+P)" aria-label="Print" onclick={print}><Icon name="print" /></button>
-        <button class="btn" title="Export as PDF (Ctrl+Shift+S)" aria-label="Export as PDF" onclick={exportPdf}><Icon name="download" /></button>
-        <button class="btn" title="Find (Ctrl+F)" aria-label="Find" onclick={() => (findOpen = true)}><Icon name="search" /></button>
+        <button class="btn" title="Print ({kbd('P')})" aria-label="Print" onclick={print}><Icon name="print" /></button>
+        <button class="btn" title="Export as PDF ({kbd('Shift+S')})" aria-label="Export as PDF" onclick={exportPdf}><Icon name="download" /></button>
+        <button class="btn" title="Find ({kbd('F')})" aria-label="Find" onclick={() => (findOpen = true)}><Icon name="search" /></button>
       {:else if image}
-        <button class="btn" title="Zoom out (Ctrl+-)" aria-label="Zoom out" onclick={() => image.zoomStep(-1)}><Icon name="zoomOut" /></button>
-        <button class="btn zoom-label" title="Actual size (Ctrl+0)" onclick={() => image.setZoom(1)}>{Math.round(image.zoom * 100)}%</button>
-        <button class="btn" title="Zoom in (Ctrl+=)" aria-label="Zoom in" onclick={() => image.zoomStep(1)}><Icon name="zoomIn" /></button>
-        <button class="btn" aria-pressed={image.fit === "page"} title="Fit to window (Ctrl+2)" aria-label="Fit to window" onclick={() => (image.fit = "page")}>
+        <button class="btn" title="Zoom out ({kbd('-')})" aria-label="Zoom out" onclick={() => image.zoomStep(-1)}><Icon name="zoomOut" /></button>
+        <button class="btn zoom-label" title="Actual size ({kbd('0')})" onclick={() => image.setZoom(1)}>{Math.round(image.zoom * 100)}%</button>
+        <button class="btn" title="Zoom in ({kbd('=')})" aria-label="Zoom in" onclick={() => image.zoomStep(1)}><Icon name="zoomIn" /></button>
+        <button class="btn" aria-pressed={image.fit === "page"} title="Fit to window ({kbd('2')})" aria-label="Fit to window" onclick={() => (image.fit = "page")}>
           <Icon name="fitPage" />
         </button>
         <span class="sep"></span>
-        <button class="btn" title="Rotate (Ctrl+R)" aria-label="Rotate clockwise" onclick={() => image.rotate()}><Icon name="rotate" /></button>
+        <button class="btn" title="Rotate ({kbd('R')})" aria-label="Rotate clockwise" onclick={() => image.rotate()}><Icon name="rotate" /></button>
         <span class="grow"></span>
-        <button class="btn" title="Print (Ctrl+P)" aria-label="Print" onclick={print}><Icon name="print" /></button>
+        <button class="btn" title="Print ({kbd('P')})" aria-label="Print" onclick={print}><Icon name="print" /></button>
       {:else if textFind}
         <span class="grow"></span>
-        <button class="btn" title="Find (Ctrl+F)" aria-label="Find" onclick={() => (findOpen = true)}><Icon name="search" /></button>
+        <button class="btn" title="Find ({kbd('F')})" aria-label="Find" onclick={() => (findOpen = true)}><Icon name="search" /></button>
       {/if}
     </div>
     {/if}
@@ -530,7 +530,7 @@
         <Icon name="file" size={28} />
         <h1>Open a file to view it</h1>
         <p class="muted">PDF, Word, Excel, PowerPoint, e-books, images, code and more. Drop files anywhere in this window.</p>
-        <button class="btn primary" onclick={chooseFiles}>Open file <span class="kbd">Ctrl+O</span></button>
+        <button class="btn primary" onclick={chooseFiles}>Open file <span class="kbd">{kbd('O')}</span></button>
       </div>
       {#if store.recent.length}
         <div class="recent">
