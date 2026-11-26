@@ -140,6 +140,7 @@
     if (mod && key === "o") return e.preventDefault(), void chooseFiles();
     if (mod && key === "w") return e.preventDefault(), tab && closeTab(tab.id);
     if (mod && (e.key === "Tab" || e.code === "Tab")) return e.preventDefault(), cycleTab(e.shiftKey ? -1 : 1);
+    if (e.metaKey && e.shiftKey && (e.code === "BracketLeft" || e.code === "BracketRight")) return e.preventDefault(), cycleTab(e.code === "BracketLeft" ? -1 : 1);
     if (e.ctrlKey && (e.key === "PageUp" || e.key === "PageDown")) return e.preventDefault(), cycleTab(e.key === "PageUp" ? -1 : 1);
     if (mod && key === "b") return e.preventDefault(), (sidebarOpen = !sidebarOpen);
     if (mod && key === "p") return e.preventDefault(), void print();
@@ -646,6 +647,16 @@
   .new-tab {
     align-self: center;
     margin-left: 4px;
+  }
+  .tabs,
+  .toolbar,
+  .status {
+    -webkit-user-select: none;
+    user-select: none;
+  }
+  .toolbar input {
+    -webkit-user-select: text;
+    user-select: text;
   }
   .toolbar {
     height: 40px;

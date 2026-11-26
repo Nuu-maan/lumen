@@ -66,8 +66,8 @@ All downloads, including `.msi` and `.deb`, are on the **[Releases page](https:/
 | System | File | Size |
 |---|---|---|
 | **Windows 10 / 11** (64-bit) | [`Lumen_0.1.0_x64-setup.exe`](https://github.com/Nuu-maan/lumen/releases/latest/download/Lumen_0.1.0_x64-setup.exe) (recommended) or [`.msi`](https://github.com/Nuu-maan/lumen/releases/latest/download/Lumen_0.1.0_x64_en-US.msi) for IT deployment | 5.8 MB |
-| **macOS 11+** (Apple Silicon and Intel) | [`Lumen_0.1.0_universal.dmg`](https://github.com/Nuu-maan/lumen/releases/latest/download/Lumen_0.1.0_universal.dmg) | |
-| **Linux** (x86-64) | [`Lumen_0.1.0_amd64.AppImage`](https://github.com/Nuu-maan/lumen/releases/latest/download/Lumen_0.1.0_amd64.AppImage) or [`.deb`](https://github.com/Nuu-maan/lumen/releases/latest/download/Lumen_0.1.0_amd64.deb) for Debian and Ubuntu | |
+| **macOS 11+** (Apple Silicon and Intel) | [`Lumen_0.1.0_universal.dmg`](https://github.com/Nuu-maan/lumen/releases/latest/download/Lumen_0.1.0_universal.dmg) | 15.7 MB |
+| **Linux** (x86-64) | [`Lumen_0.1.0_amd64.AppImage`](https://github.com/Nuu-maan/lumen/releases/latest/download/Lumen_0.1.0_amd64.AppImage) or [`.deb`](https://github.com/Nuu-maan/lumen/releases/latest/download/Lumen_0.1.0_amd64.deb) for Debian and Ubuntu | 87 MB / 9.2 MB |
 
 <details open>
 <summary><b>Windows</b></summary>
@@ -147,7 +147,7 @@ On Windows with **Microsoft Office** installed, you can render through Office it
 | Print / Export as PDF | Ctrl+P / Ctrl+Shift+S |
 | Present slides / exit | F5 / Esc (arrows, Space and PgDn advance) |
 
-On macOS, use ⌘ in place of Ctrl.
+On macOS, use ⌘ in place of Ctrl. ⌘⇧[ and ⌘⇧] also switch tabs.
 
 ## Supported formats
 
