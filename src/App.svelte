@@ -1,1 +1,608 @@
-<main>Lumen</main>
+<script lang="ts">
+  import { onMount } from "svelte";
+  import { listen } from "@tauri-apps/api/event";
+  import { getCurrentWebview } from "@tauri-apps/api/webview";
+  import { open as openDialog } from "@tauri-apps/plugin-dialog";
+  import { openPath as systemOpen, openUrl } from "@tauri-apps/plugin-opener";
+  import { api } from "./lib/api";
+  import { store, activeTab, openPath, load, closeTab, cycleTab, forgetRecent } from "./lib/tabs.svelte";
+  import Icon from "./components/Icon.svelte";
+  import Dialog from "./components/Dialog.svelte";
+  import FindBar from "./components/FindBar.svelte";
+  import PagedView from "./views/PagedView.svelte";
+  import Sidebar from "./views/Sidebar.svelte";
+
+  let sidebarOpen = $state(localStorage.getItem("lumen.sidebar") !== "0");
+  let findOpen = $state(false);
+  let dragging = $state(false);
+  let password = $state("");
+  let pendingLink = $state<string | null>(null);
+  let pageInput = $state("");
+  let pagedView: PagedView | undefined = $state();
+
+  const tab = $derived(activeTab());
+  const paged = $derived(tab?.view.kind === "paged" ? tab.view.state : null);
+
+  $effect(() => localStorage.setItem("lumen.sidebar", sidebarOpen ? "1" : "0"));
+  $effect(() => {
+    pageInput = paged ? String(paged.page + 1) : "";
+  });
+  $effect(() => {
+    document.title = tab ? `${tab.name} - Lumen` : "Lumen";
+  });
+
+  async function chooseFiles() {
+    const picked = await openDialog({ multiple: true, title: "Open file" });
+    for (const p of picked ?? []) await openPath(p);
+  }
+
+  function openAll(paths: string[]) {
+    for (const p of paths) void openPath(p);
+  }
+
+  function zoom(direction: 1 | -1) {
+    if (!paged) return;
+    const before = paged.zoom;
+    paged.zoomStep(direction);
+    const after = paged.zoom;
+    paged.zoom = before;
+    pagedView?.zoomTo(after);
+  }
+
+  function submitPage(e: Event) {
+    e.preventDefault();
+    const n = parseInt(pageInput, 10);
+    if (paged && !Number.isNaN(n)) paged.goTo(n - 1);
+    else if (paged) pageInput = String(paged.page + 1);
+  }
+
+  function onkeydown(e: KeyboardEvent) {
+    const mod = e.ctrlKey || e.metaKey;
+    const typing = (e.target as HTMLElement)?.closest?.("input, textarea");
+    const key = e.key.toLowerCase();
+    if (mod && key === "o") return e.preventDefault(), void chooseFiles();
+    if (mod && key === "w") return e.preventDefault(), tab && closeTab(tab.id);
+    if (mod && e.key === "Tab") return e.preventDefault(), cycleTab(e.shiftKey ? -1 : 1);
+    if (mod && key === "b") return e.preventDefault(), (sidebarOpen = !sidebarOpen);
+    if (!paged) return;
+    if (mod && key === "f") return e.preventDefault(), (findOpen = true);
+    if (mod && (e.key === "=" || e.key === "+")) return e.preventDefault(), zoom(1);
+    if (mod && e.key === "-") return e.preventDefault(), zoom(-1);
+    if (mod && e.key === "0") return e.preventDefault(), pagedView?.zoomTo(1);
+    if (mod && e.key === "1") return e.preventDefault(), (paged.fit = "width");
+    if (mod && e.key === "2") return e.preventDefault(), (paged.fit = "page");
+    if (mod && key === "r") return e.preventDefault(), paged.rotate();
+    if (e.key === "F3") return e.preventDefault(), paged.selectHit(paged.hitIndex + (e.shiftKey ? -1 : 1));
+    if (typing) return;
+    const single = paged.mode === "single";
+    if (e.key === "Home") return e.preventDefault(), paged.goTo(0);
+    if (e.key === "End") return e.preventDefault(), paged.goTo(paged.pageCount - 1);
+    if (single && (e.key === "PageDown" || e.key === "ArrowRight" || e.key === " "))
+      return e.preventDefault(), paged.goTo(paged.page + 1);
+    if (single && (e.key === "PageUp" || e.key === "ArrowLeft")) return e.preventDefault(), paged.goTo(paged.page - 1);
+  }
+
+  onMount(() => {
+    const unlisten = [
+      listen<string[]>("open-paths", (e) => openAll(e.payload)),
+      getCurrentWebview().onDragDropEvent((e) => {
+        if (e.payload.type === "enter" || e.payload.type === "over") dragging = true;
+        else if (e.payload.type === "leave") dragging = false;
+        else if (e.payload.type === "drop") {
+          dragging = false;
+          openAll(e.payload.paths);
+        }
+      }),
+    ];
+    requestAnimationFrame(() => requestAnimationFrame(() => api.ready().then(openAll)));
+    return () => unlisten.forEach((u) => u.then((f) => f()));
+  });
+
+  const zoomLabel = $derived(paged ? `${Math.round(paged.zoom * 100)}%` : "");
+</script>
+
+<svelte:window {onkeydown} />
+
+<div class="app">
+  {#if store.tabs.length}
+    <header class="tabs" role="tablist" aria-label="Open files">
+      {#each store.tabs as t (t.id)}
+        <div class="tab" class:active={t.id === store.active} role="tab" aria-selected={t.id === store.active}>
+          <button class="tab-label" title={t.path} onclick={() => (store.active = t.id)} onauxclick={(e) => e.button === 1 && closeTab(t.id)}>
+            {t.name}
+          </button>
+          <button class="tab-close btn" aria-label="Close {t.name}" title="Close tab (Ctrl+W)" onclick={() => closeTab(t.id)}>
+            <Icon name="close" size={14} />
+          </button>
+        </div>
+      {/each}
+      <button class="btn new-tab" title="Open file (Ctrl+O)" aria-label="Open file" onclick={chooseFiles}><Icon name="open" /></button>
+    </header>
+
+    <div class="toolbar" role="toolbar" aria-label="View controls">
+      <button class="btn" aria-pressed={sidebarOpen} title="Sidebar (Ctrl+B)" aria-label="Toggle sidebar" onclick={() => (sidebarOpen = !sidebarOpen)} disabled={!paged}>
+        <Icon name="sidebar" />
+      </button>
+      {#if paged}
+        <span class="sep"></span>
+        <form class="pager" onsubmit={submitPage}>
+          <input class="field page-input" bind:value={pageInput} aria-label="Page number" onfocus={(e) => e.currentTarget.select()} />
+          <span class="muted">of {paged.pageCount}</span>
+        </form>
+        <span class="sep"></span>
+        <button class="btn" title="Zoom out (Ctrl+-)" aria-label="Zoom out" onclick={() => zoom(-1)}><Icon name="zoomOut" /></button>
+        <button class="btn zoom-label" title="Actual size (Ctrl+0)" onclick={() => pagedView?.zoomTo(1)}>{zoomLabel}</button>
+        <button class="btn" title="Zoom in (Ctrl+=)" aria-label="Zoom in" onclick={() => zoom(1)}><Icon name="zoomIn" /></button>
+        <button class="btn" aria-pressed={paged.fit === "width"} title="Fit width (Ctrl+1)" aria-label="Fit width" onclick={() => (paged.fit = "width")}>
+          <Icon name="fitWidth" />
+        </button>
+        <button class="btn" aria-pressed={paged.fit === "page"} title="Fit page (Ctrl+2)" aria-label="Fit page" onclick={() => (paged.fit = "page")}>
+          <Icon name="fitPage" />
+        </button>
+        <span class="sep"></span>
+        <button class="btn" title="Rotate (Ctrl+R)" aria-label="Rotate clockwise" onclick={() => paged.rotate()}><Icon name="rotate" /></button>
+        <button
+          class="btn"
+          aria-pressed={paged.mode === "single"}
+          title={paged.mode === "single" ? "Continuous scroll" : "Single page"}
+          aria-label="Toggle single page"
+          onclick={() => (paged.mode = paged.mode === "single" ? "scroll" : "single")}
+        >
+          <Icon name={paged.mode === "single" ? "single" : "scroll"} />
+        </button>
+        <button class="btn" aria-pressed={paged.invert} title="Invert pages for night reading" aria-label="Invert pages" onclick={() => (paged.invert = !paged.invert)}>
+          <Icon name="moon" />
+        </button>
+        <span class="grow"></span>
+        <button class="btn" title="Find (Ctrl+F)" aria-label="Find" onclick={() => (findOpen = true)}><Icon name="search" /></button>
+      {/if}
+    </div>
+
+    <main class="main">
+      {#if paged && sidebarOpen}<Sidebar state={paged} />{/if}
+      <section class="stage">
+        {#if !tab}
+          <div></div>
+        {:else if tab.view.kind === "loading"}
+          <div class="skeleton-stage" aria-busy="true" aria-label="Opening {tab.name}">
+            <div class="skeleton-page"><span></span><span></span><span></span><span></span><span></span></div>
+          </div>
+        {:else if tab.view.kind === "paged"}
+          {#key tab.id}
+            <PagedView bind:this={pagedView} state={tab.view.state} onExternalLink={(uri) => (pendingLink = uri)} />
+          {/key}
+          {#if findOpen}
+            <FindBar
+              query={tab.view.state.query}
+              count={tab.view.state.hits.length}
+              index={tab.view.state.hitIndex}
+              searching={tab.view.state.searching}
+              onsearch={(q) => paged?.search(q)}
+              onnext={(d) => paged?.selectHit(paged.hitIndex + d)}
+              onclose={() => {
+                findOpen = false;
+                paged?.search("");
+              }}
+            />
+          {/if}
+        {:else if tab.view.kind === "password"}
+          {@const t = tab}
+          <form
+            class="center-card"
+            onsubmit={(e) => {
+              e.preventDefault();
+              void load(t.id, password).then(() => (password = ""));
+            }}
+          >
+            <Icon name="lock" size={20} />
+            <h1>{t.name} is password protected</h1>
+            <p class="muted">Enter the password to open it. Lumen doesn't store it.</p>
+            <input class="field" type="password" bind:value={password} aria-label="Password" autocomplete="off" />
+            {#if tab.view.wrong}<p class="error" role="alert">That password didn't work. Check caps lock and try again.</p>{/if}
+            <div class="row">
+              <button class="btn secondary" type="button" onclick={() => closeTab(t.id)}>Close tab</button>
+              <button class="btn primary" type="submit" disabled={!password}>Open file</button>
+            </div>
+          </form>
+        {:else if tab.view.kind === "error"}
+          {@const t = tab}
+          <div class="center-card" role="alert">
+            <Icon name="alert" size={20} />
+            <h1>Couldn't open {t.name}</h1>
+            <p class="muted">{tab.view.message}</p>
+            <div class="row">
+              <button class="btn secondary" onclick={() => load(t.id)}>Retry</button>
+              <button class="btn primary" onclick={() => systemOpen(t.path)}>Open with system app</button>
+            </div>
+          </div>
+        {/if}
+      </section>
+    </main>
+
+    <footer class="status">
+      {#if tab}
+        <span>{tab.file?.format.label ?? ""}</span>
+        {#if paged}
+          <span class="tnum">Page {paged.page + 1} of {paged.pageCount}</span>
+          <span class="tnum">{zoomLabel}</span>
+        {/if}
+        <span class="grow"></span>
+        {#if tab.view.kind === "paged"}<span class="badge exact">{tab.view.engine}</span>{/if}
+      {/if}
+    </footer>
+  {:else}
+    <section class="empty">
+      <div class="drop">
+        <Icon name="file" size={28} />
+        <h1>Open a file to view it</h1>
+        <p class="muted">PDF, Word, Excel, PowerPoint, e-books, images, code and more. Drop files anywhere in this window.</p>
+        <button class="btn primary" onclick={chooseFiles}>Open file <span class="kbd">Ctrl+O</span></button>
+      </div>
+      {#if store.recent.length}
+        <div class="recent">
+          <h2>Recent files</h2>
+          <ul>
+            {#each store.recent as path}
+              <li>
+                <button class="recent-item" title={path} onclick={() => openPath(path)}>
+                  <span class="recent-name">{path.split(/[\\/]/).pop()}</span>
+                  <span class="recent-dir muted">{path.replace(/[\\/][^\\/]*$/, "")}</span>
+                </button>
+                <button class="btn" aria-label="Remove {path} from recent files" title="Remove from recent files" onclick={() => forgetRecent(path)}>
+                  <Icon name="close" size={14} />
+                </button>
+              </li>
+            {/each}
+          </ul>
+        </div>
+      {/if}
+    </section>
+  {/if}
+
+  {#if dragging}
+    <div class="drop-overlay" aria-hidden="true"><div>Drop to open</div></div>
+  {/if}
+</div>
+
+{#if pendingLink}
+  {@const link = pendingLink}
+  <Dialog title="Open this link in your browser?" onclose={() => (pendingLink = null)}>
+    <p class="link-text">{link}</p>
+    {#snippet actions()}
+      <button class="btn secondary" onclick={() => (pendingLink = null)}>Cancel</button>
+      <button
+        class="btn primary"
+        onclick={() => {
+          pendingLink = null;
+          void openUrl(link);
+        }}>Open link</button
+      >
+    {/snippet}
+  </Dialog>
+{/if}
+
+<style>
+  .app {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+  }
+  .tabs {
+    height: 36px;
+    flex: none;
+    display: flex;
+    align-items: stretch;
+    gap: 2px;
+    padding: 4px 8px 0;
+    background: var(--gray-1);
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .tab {
+    position: relative;
+    display: flex;
+    align-items: center;
+    max-width: 220px;
+    min-width: 96px;
+    padding-left: 12px;
+    border-radius: 8px 8px 0 0;
+    color: var(--text-2);
+    animation: tab-in 180ms var(--ease-out);
+  }
+  .tab.active {
+    background: var(--surface);
+    color: var(--text);
+  }
+  .tab.active::after {
+    content: "";
+    position: absolute;
+    left: 12px;
+    right: 12px;
+    top: 0;
+    height: 2px;
+    border-radius: 0 0 2px 2px;
+    background: var(--accent-9);
+  }
+  .tab-label {
+    flex: 1;
+    min-width: 0;
+    height: 100%;
+    text-align: left;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .tab-close {
+    height: 22px;
+    min-width: 22px;
+    margin: 0 4px;
+    padding: 0;
+  }
+  .new-tab {
+    align-self: center;
+    margin-left: 4px;
+  }
+  .toolbar {
+    height: 40px;
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    padding: 0 8px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--gray-5);
+  }
+  .sep {
+    width: 1px;
+    height: 16px;
+    margin: 0 6px;
+    background: var(--gray-6);
+  }
+  .grow {
+    flex: 1;
+  }
+  .pager {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .page-input {
+    width: 48px;
+    height: 26px;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+  }
+  .zoom-label {
+    min-width: 52px;
+    font-variant-numeric: tabular-nums;
+  }
+  .main {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+  }
+  .stage {
+    position: relative;
+    flex: 1;
+    min-width: 0;
+  }
+  .status {
+    height: 24px;
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 0 12px;
+    font-size: var(--fs-1);
+    color: var(--text-2);
+    background: var(--surface);
+    border-top: 1px solid var(--gray-5);
+  }
+  .tnum {
+    font-variant-numeric: tabular-nums;
+  }
+  .badge {
+    padding: 1px 8px;
+    border-radius: 999px;
+    background: var(--gray-4);
+    color: var(--text);
+    animation: fade 200ms var(--ease-out);
+  }
+  .badge.exact::before {
+    content: "";
+    display: inline-block;
+    width: 6px;
+    height: 6px;
+    margin-right: 6px;
+    border-radius: 50%;
+    background: var(--accent-9);
+    vertical-align: 1px;
+  }
+  .skeleton-stage {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    justify-content: center;
+    padding: 16px;
+    overflow: hidden;
+  }
+  .skeleton-page {
+    width: min(720px, 100%);
+    aspect-ratio: 8.5 / 11;
+    padding: 64px 56px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    background: var(--gray-3);
+    border-radius: 2px;
+    animation: pulse 1.4s ease-in-out infinite;
+  }
+  .skeleton-page span {
+    height: 10px;
+    border-radius: 4px;
+    background: var(--gray-5);
+  }
+  .skeleton-page span:first-child {
+    width: 40%;
+    height: 16px;
+    margin-bottom: 12px;
+  }
+  .skeleton-page span:nth-child(3) {
+    width: 85%;
+  }
+  .skeleton-page span:last-child {
+    width: 60%;
+  }
+  .center-card {
+    position: absolute;
+    inset: 0;
+    margin: auto;
+    width: min(440px, calc(100% - 32px));
+    height: fit-content;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 24px;
+  }
+  .center-card h1,
+  .drop h1 {
+    margin: 4px 0 0;
+    font-size: var(--fs-4);
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    overflow-wrap: anywhere;
+  }
+  .center-card p {
+    margin: 0;
+    overflow-wrap: anywhere;
+  }
+  .center-card .field {
+    width: 100%;
+    margin-top: 8px;
+  }
+  .row {
+    display: flex;
+    gap: 8px;
+    margin-top: 16px;
+  }
+  .error {
+    color: var(--red-11);
+  }
+  .empty {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 32px;
+    padding: 32px;
+    overflow: auto;
+  }
+  .drop {
+    width: min(520px, 100%);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    padding: 48px 32px;
+    text-align: center;
+    border: 1px dashed var(--gray-7);
+    border-radius: var(--r-float);
+  }
+  .drop p {
+    margin: 0 0 8px;
+    max-width: 48ch;
+    text-wrap: pretty;
+  }
+  .drop .kbd {
+    color: oklch(30% 0.04 65);
+  }
+  .recent {
+    width: min(520px, 100%);
+  }
+  .recent h2 {
+    margin: 0 0 8px;
+    font-size: var(--fs-2);
+    font-weight: 500;
+    color: var(--text-2);
+  }
+  .recent ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  .recent li {
+    display: flex;
+    align-items: center;
+    border-radius: var(--r-control);
+  }
+  .recent-item {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    gap: 12px;
+    align-items: baseline;
+    padding: 6px 8px;
+    text-align: left;
+  }
+  .recent-name {
+    flex: none;
+    max-width: 60%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .recent-dir {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: var(--fs-1);
+  }
+  .drop-overlay {
+    position: fixed;
+    inset: 8px;
+    z-index: 40;
+    display: grid;
+    place-items: center;
+    border: 2px dashed var(--accent-9);
+    border-radius: var(--r-float);
+    background: oklch(16% 0.01 65 / 0.8);
+    font-size: var(--fs-3);
+    pointer-events: none;
+    animation: fade 150ms var(--ease-out);
+  }
+  .link-text {
+    margin: 0;
+    padding: 8px 12px;
+    border-radius: var(--r-control);
+    background: var(--gray-2);
+    font-family: ui-monospace, monospace;
+    font-size: var(--fs-1);
+  }
+  @media (hover: hover) and (pointer: fine) {
+    .tab:not(.active):hover {
+      background: var(--gray-3);
+      color: var(--text);
+    }
+    .recent li:hover {
+      background: var(--gray-3);
+    }
+  }
+  @keyframes tab-in {
+    from {
+      opacity: 0;
+      transform: translateY(4px);
+    }
+  }
+  @keyframes fade {
+    from {
+      opacity: 0;
+    }
+  }
+  @keyframes pulse {
+    50% {
+      opacity: 0.6;
+    }
+  }
+</style>

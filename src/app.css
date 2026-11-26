@@ -1,0 +1,190 @@
+:root {
+  color-scheme: dark;
+  --gray-1: oklch(16.5% 0.006 65);
+  --gray-2: oklch(19% 0.006 65);
+  --gray-3: oklch(22.5% 0.007 65);
+  --gray-4: oklch(25.5% 0.007 65);
+  --gray-5: oklch(28.5% 0.008 65);
+  --gray-6: oklch(32% 0.008 65);
+  --gray-7: oklch(38% 0.009 65);
+  --gray-8: oklch(46% 0.01 65);
+  --gray-11: oklch(76% 0.01 65);
+  --gray-12: oklch(94% 0.006 65);
+  --accent-9: oklch(74% 0.13 65);
+  --accent-10: oklch(78% 0.13 65);
+  --accent-a3: oklch(74% 0.13 65 / 0.16);
+  --accent-a5: oklch(74% 0.13 65 / 0.32);
+  --accent-contrast: oklch(20% 0.03 65);
+  --red-11: oklch(72% 0.13 25);
+  --hit: oklch(85% 0.16 90 / 0.45);
+  --hit-current: oklch(74% 0.17 55 / 0.6);
+
+  --desk: var(--gray-1);
+  --surface: var(--gray-2);
+  --text: var(--gray-12);
+  --text-2: var(--gray-11);
+  --border: var(--gray-6);
+
+  --r-control: 6px;
+  --r-float: 12px;
+  --shadow-page: 0 1px 2px oklch(5% 0.01 65 / 0.35), 0 8px 24px oklch(5% 0.01 65 / 0.35);
+  --shadow-float: 0 2px 4px oklch(5% 0.01 65 / 0.3), 0 12px 32px oklch(5% 0.01 65 / 0.4);
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+
+  --fs-1: 12px;
+  --fs-2: 13px;
+  --fs-3: 15px;
+  --fs-4: 20px;
+
+  font-family: system-ui, "Segoe UI Variable Text", "Segoe UI", -apple-system, "SF Pro Text", Cantarell, Ubuntu, sans-serif;
+  font-size: var(--fs-2);
+  line-height: 1.45;
+  color: var(--text);
+  background: var(--desk);
+  -webkit-font-smoothing: antialiased;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: default;
+  touch-action: manipulation;
+}
+
+input {
+  font: inherit;
+  color: inherit;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent-9);
+  outline-offset: 1px;
+}
+
+.btn {
+  height: 28px;
+  min-width: 28px;
+  padding: 0 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border-radius: var(--r-control);
+  color: var(--text-2);
+  transition: background-color 120ms ease, color 120ms ease, transform 120ms var(--ease-out);
+  user-select: none;
+  white-space: nowrap;
+}
+
+.btn:active {
+  transform: scale(0.96);
+  background: var(--gray-5);
+}
+
+.btn[aria-pressed="true"] {
+  color: var(--text);
+  background: var(--gray-4);
+}
+
+.btn:disabled {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+.btn.primary {
+  height: 32px;
+  padding: 0 16px;
+  background: var(--accent-9);
+  color: var(--accent-contrast);
+  font-weight: 500;
+}
+
+.btn.secondary {
+  height: 32px;
+  padding: 0 16px;
+  background: var(--gray-4);
+  color: var(--text);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .btn:hover {
+    background: var(--gray-4);
+    color: var(--text);
+  }
+  .btn.primary:hover {
+    background: var(--accent-10);
+    color: var(--accent-contrast);
+  }
+  .btn.secondary:hover {
+    background: var(--gray-5);
+  }
+}
+
+.field {
+  height: 32px;
+  padding: 0 10px;
+  border-radius: var(--r-control);
+  border: 1px solid var(--gray-7);
+  background: var(--gray-1);
+  outline: none;
+  min-width: 0;
+}
+
+.field:focus {
+  border-color: var(--accent-9);
+  box-shadow: 0 0 0 2px var(--accent-a3);
+}
+
+.kbd {
+  font-size: var(--fs-1);
+  color: var(--gray-8);
+}
+
+.muted {
+  color: var(--text-2);
+}
+
+::selection {
+  background: var(--accent-a5);
+}
+
+::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--gray-6);
+  border: 3px solid transparent;
+  background-clip: padding-box;
+  border-radius: 8px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background-color: var(--gray-7);
+}
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-property: opacity, background-color, color !important;
+    animation: none !important;
+  }
+}
