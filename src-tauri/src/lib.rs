@@ -213,11 +213,45 @@ fn handle_protocol(reg: &Arc<Registry>, path: &str, responder: tauri::UriSchemeR
     });
 }
 
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn app_menu(app: &tauri::AppHandle) -> tauri::Result<tauri::menu::Menu<tauri::Wry>> {
+    use tauri::menu::{Menu, PredefinedMenuItem as Item, Submenu};
+    Menu::with_items(
+        app,
+        &[
+            &Submenu::with_items(
+                app,
+                "Lumen",
+                true,
+                &[
+                    &Item::about(app, None, None)?,
+                    &Item::separator(app)?,
+                    &Item::hide(app, None)?,
+                    &Item::hide_others(app, None)?,
+                    &Item::show_all(app, None)?,
+                    &Item::separator(app)?,
+                    &Item::quit(app, None)?,
+                ],
+            )?,
+            &Submenu::with_items(
+                app,
+                "Edit",
+                true,
+                &[&Item::undo(app, None)?, &Item::redo(app, None)?, &Item::separator(app)?, &Item::cut(app, None)?, &Item::copy(app, None)?, &Item::paste(app, None)?, &Item::select_all(app, None)?],
+            )?,
+            &Submenu::with_items(app, "Window", true, &[&Item::minimize(app, None)?, &Item::fullscreen(app, None)?])?,
+        ],
+    )
+}
+
 pub fn run() {
     let launch = Launch(Instant::now());
     let registry = Arc::new(Registry::new());
     let protocol_registry = registry.clone();
-    tauri::Builder::default()
+    let builder = tauri::Builder::default();
+    #[cfg(target_os = "macos")]
+    let builder = builder.menu(app_menu);
+    builder
         .plugin(tauri_plugin_single_instance::init(|app, argv, cwd| {
             let paths = path_args(argv.into_iter().skip(1), std::path::Path::new(&cwd));
             deliver(app, paths);
@@ -246,11 +280,19 @@ pub fn run() {
                 println!("window_ms={}", app.state::<Launch>().0.elapsed().as_millis());
             }
             let size = window.inner_size()?.to_logical::<f64>(window.scale_factor()?);
-            window.add_child(
+            let webview = window.add_child(
                 tauri::webview::WebviewBuilder::new("main", tauri::WebviewUrl::default()).auto_resize(),
                 tauri::LogicalPosition::new(0.0, 0.0),
                 size,
             )?;
+            #[cfg(target_os = "macos")]
+            window.on_window_event(move |e| {
+                if let tauri::WindowEvent::Focused(true) = e {
+                    let _ = webview.set_focus();
+                }
+            });
+            #[cfg(not(target_os = "macos"))]
+            drop(webview);
             Ok(())
         })
         .manage(launch)
