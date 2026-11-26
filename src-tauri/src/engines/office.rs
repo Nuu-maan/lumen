@@ -2,6 +2,7 @@ use parking_lot::Mutex;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, Command, Stdio};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError};
 use std::time::{Duration, Instant};
 
@@ -72,7 +73,7 @@ pub fn find_libreoffice() -> Option<Install> {
         } else {
             PathBuf::from("/usr/bin/python3")
         };
-        (soffice.exists() && python.exists()).then_some(Install { soffice, python })
+        soffice.exists().then_some(Install { soffice, python })
     })
 }
 
@@ -130,6 +131,20 @@ pub struct Office {
     work_dir: PathBuf,
     worker: Mutex<Option<Worker>>,
     last_used: Mutex<Instant>,
+    worker_broken: AtomicBool,
+}
+
+fn soffice_command(install: &Install, profile: &Path) -> Command {
+    let mut cmd = Command::new(&install.soffice);
+    cmd.args(["--headless", "--invisible", "--nologo", "--norestore", "--nodefault", "--nolockcheck", "--nofirststartwizard"])
+        .arg(format!("-env:UserInstallation={}", url_from_path(profile)))
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    #[cfg(unix)]
+    std::os::unix::process::CommandExt::process_group(&mut cmd, 0);
+    hide_window(&mut cmd);
+    cmd
 }
 
 #[cfg(windows)]
@@ -145,7 +160,12 @@ fn hide_window(cmd: &mut Command) -> &mut Command {
 
 impl Office {
     pub fn new(work_dir: PathBuf) -> std::sync::Arc<Self> {
-        let office = std::sync::Arc::new(Office { work_dir, worker: Mutex::new(None), last_used: Mutex::new(Instant::now()) });
+        let office = std::sync::Arc::new(Office {
+            work_dir,
+            worker: Mutex::new(None),
+            last_used: Mutex::new(Instant::now()),
+            worker_broken: AtomicBool::new(cfg!(target_os = "macos")),
+        });
         let weak = std::sync::Arc::downgrade(&office);
         std::thread::Builder::new()
             .name("office-reaper".into())
@@ -174,23 +194,22 @@ impl Office {
         let script = self.work_dir.join("lumen_office_worker.py");
         std::fs::write(&script, WORKER_SCRIPT).map_err(fail)?;
         let pipe = format!("lumen_{}", std::process::id());
-        let profile = url_from_path(&self.work_dir.join("lo-profile"));
-        let mut soffice = Command::new(&install.soffice);
-        soffice
-            .args(["--headless", "--invisible", "--nologo", "--norestore", "--nodefault", "--nolockcheck", "--nofirststartwizard"])
+        let mut soffice = soffice_command(install, &self.work_dir.join("lo-profile"))
             .arg(format!("--accept=pipe,name={pipe};urp;"))
-            .arg(format!("-env:UserInstallation={profile}"))
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null());
-        #[cfg(unix)]
-        std::os::unix::process::CommandExt::process_group(&mut soffice, 0);
-        let soffice = hide_window(&mut soffice).spawn().map_err(fail)?;
-        let mut python = hide_window(
+            .spawn()
+            .map_err(fail)?;
+        let mut python = match hide_window(
             Command::new(&install.python).arg(&script).arg(&pipe).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::null()),
         )
         .spawn()
-        .map_err(fail)?;
+        {
+            Ok(python) => python,
+            Err(e) => {
+                kill_tree(&mut soffice);
+                let _ = soffice.wait();
+                return Err(fail(e));
+            }
+        };
         let stdin = python.stdin.take().expect("piped stdin");
         let stdout = python.stdout.take().expect("piped stdout");
         let (tx, replies) = mpsc::channel();
@@ -219,6 +238,9 @@ impl Office {
     }
 
     pub fn warm_up(&self) {
+        if self.worker_broken.load(Ordering::Relaxed) {
+            return;
+        }
         if let Some(install) = find_libreoffice() {
             let mut guard = self.worker.lock();
             if guard.is_none() {
@@ -232,8 +254,18 @@ impl Office {
         *self.last_used.lock() = Instant::now();
         let mut guard = self.worker.lock();
         for attempt in 0..2 {
+            if guard.is_none() && password.is_none() && self.worker_broken.load(Ordering::Relaxed) {
+                return self.convert_cli(&install, input, output, timeout);
+            }
             if guard.is_none() {
-                *guard = Some(self.start(&install)?);
+                match self.start(&install) {
+                    Ok(worker) => *guard = Some(worker),
+                    Err(_) if password.is_none() => {
+                        self.worker_broken.store(true, Ordering::Relaxed);
+                        return self.convert_cli(&install, input, output, timeout);
+                    }
+                    Err(e) => return Err(e),
+                }
             }
             let worker = guard.as_mut().unwrap();
             let request = serde_json::json!({ "in": input, "out": output, "password": password }).to_string();
@@ -263,6 +295,41 @@ impl Office {
             }
         }
         Err(ConvertError::Failed("LibreOffice stopped unexpectedly".into()))
+    }
+
+    fn convert_cli(&self, install: &Install, input: &Path, output: &Path, timeout: Duration) -> Result<(), ConvertError> {
+        let out_dir = output.with_extension("lo-out");
+        let _ = std::fs::remove_dir_all(&out_dir);
+        std::fs::create_dir_all(&out_dir).map_err(|e| ConvertError::Failed(e.to_string()))?;
+        let mut child = soffice_command(install, &self.work_dir.join("lo-profile-cli"))
+            .args(["--convert-to", "pdf", "--outdir"])
+            .arg(&out_dir)
+            .arg(input)
+            .spawn()
+            .map_err(|e| ConvertError::Failed(format!("couldn't start LibreOffice ({e})")))?;
+        let started = Instant::now();
+        let status = loop {
+            if let Some(status) = child.try_wait().map_err(|e| ConvertError::Failed(e.to_string()))? {
+                break status;
+            }
+            if started.elapsed() > timeout {
+                kill_tree(&mut child);
+                let _ = child.wait();
+                let _ = std::fs::remove_dir_all(&out_dir);
+                return Err(ConvertError::Timeout);
+            }
+            std::thread::sleep(Duration::from_millis(50));
+        };
+        let produced = std::fs::read_dir(&out_dir)
+            .ok()
+            .and_then(|d| d.flatten().map(|e| e.path()).find(|p| p.extension().is_some_and(|x| x == "pdf")));
+        let moved = produced.map(|p| std::fs::rename(p, output));
+        let _ = std::fs::remove_dir_all(&out_dir);
+        match moved {
+            Some(Ok(())) => Ok(()),
+            Some(Err(e)) => Err(ConvertError::Failed(e.to_string())),
+            None => Err(ConvertError::Failed(format!("LibreOffice produced no PDF ({status})"))),
+        }
     }
 
     pub fn convert_ms_office(&self, input: &Path, output: &Path, timeout: Duration) -> Result<(), ConvertError> {
@@ -384,5 +451,8 @@ mod tests {
         office.convert_libreoffice(&input, &out, None, Duration::from_secs(120)).unwrap();
         assert!(std::fs::read(&out).unwrap().starts_with(b"%PDF"));
         office.shutdown();
+        let cli_out = dir.join("in.v2.pdf");
+        office.convert_cli(&find_libreoffice().unwrap(), &input, &cli_out, Duration::from_secs(120)).unwrap();
+        assert!(std::fs::read(&cli_out).unwrap().starts_with(b"%PDF"));
     }
 }

@@ -9,3 +9,7 @@ export function formatSize(bytes: number) {
   }
   return `${value < 10 ? value.toFixed(1) : Math.round(value)} ${units[unit]}`;
 }
+
+const mac = /Mac|iPhone|iPad/.test(navigator.platform);
+
+export const kbd = (keys: string) => (mac ? (keys.startsWith("Shift+") ? "⇧⌘" + keys.slice(6) : "⌘" + keys) : "Ctrl+" + keys);

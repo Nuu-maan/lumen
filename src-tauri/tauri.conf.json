@@ -76,13 +76,21 @@
           "docm",
           "dotx",
           "doc",
-          "rtf",
           "odt"
         ],
         "name": "Word document",
         "description": "Word document",
         "role": "Viewer",
         "mimeType": "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+      },
+      {
+        "ext": [
+          "rtf"
+        ],
+        "name": "Rich Text document",
+        "description": "Rich Text document",
+        "role": "Viewer",
+        "mimeType": "text/rtf"
       },
       {
         "ext": [

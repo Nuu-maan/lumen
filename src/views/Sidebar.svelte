@@ -1,6 +1,7 @@
 <script lang="ts">
   import { pageUrl, type OutlineItem } from "../lib/api";
   import type { PagedState } from "../lib/paged.svelte";
+  import { kbd } from "../lib/format";
 
   let { state: s }: { state: PagedState } = $props();
   let panel = $state<"pages" | "outline">("pages");
@@ -50,7 +51,7 @@
       {#each [70, 55, 80, 60, 45] as w}<div class="skeleton" style:width="{w}%"></div>{/each}
     </div>
   {:else if s.outline.length === 0}
-    <p class="empty muted">This document has no outline. Use Pages to jump around, or Ctrl+F to find text.</p>
+    <p class="empty muted">This document has no outline. Use Pages to jump around, or {kbd('F')} to find text.</p>
   {:else}
     <div class="outline">{@render tree(s.outline, 0)}</div>
   {/if}
