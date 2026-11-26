@@ -81,9 +81,9 @@ fn write_png(path: &Path, width: usize, height: usize, bgr: &[u8]) {
 }
 
 fn main() {
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../fixtures");
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures");
     let work = std::env::temp_dir().join(format!("lumen-fidelity-{}", std::process::id()));
-    let diffs = Path::new(env!("CARGO_MANIFEST_DIR")).join("target/fidelity");
+    let diffs = Path::new(env!("CARGO_MANIFEST_DIR")).join("../target/fidelity");
     std::fs::create_dir_all(&work).unwrap();
     std::fs::create_dir_all(&diffs).unwrap();
     let update = std::env::args().any(|a| a == "--update-references");
@@ -140,7 +140,7 @@ fn main() {
         "| Fixture | Pages (reference / Lumen) | Worst page mismatch | Result (≤ {THRESHOLD}%) | Covers |\n|---|---|---|---|---|\n{}\n",
         rows.join("\n")
     );
-    let doc = Path::new(env!("CARGO_MANIFEST_DIR")).join("../FIDELITY.md");
+    let doc = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../FIDELITY.md");
     if let Ok(existing) = std::fs::read_to_string(&doc) {
         let (head, rest) = existing.split_once("<!-- results -->").unwrap_or((&existing, ""));
         let tail = rest.split_once("<!-- /results -->").map(|(_, t)| t).unwrap_or("");

@@ -31,7 +31,7 @@ const METRICS: &[Metric] = &[
 ];
 
 fn root() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("..")
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
 }
 
 fn sample(name: &str) -> PathBuf {
