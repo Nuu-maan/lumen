@@ -41,14 +41,18 @@ jobs:
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         with:
           tagName: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
           releaseName: Lumen ${{ github.ref_name }}
+          releaseBody: |
+            Download the installer for your system below, then follow the [install guide](https://github.com/Nuu-maan/lumen#install).
+
+            | System | File |
+            |---|---|
+            | Windows 10/11 | `Lumen_*_x64-setup.exe` |
+            | macOS 11+ (Apple Silicon and Intel) | `Lumen_*_universal.dmg` |
+            | Linux | `Lumen_*_amd64.AppImage` or `Lumen_*_amd64.deb` |
+
+            For the exact layout of Word, Excel and PowerPoint files, also install the free [LibreOffice](https://www.libreoffice.org/download/download-libreoffice/).
           releaseDraft: true
           args: ${{ matrix.args }}
