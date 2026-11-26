@@ -135,7 +135,7 @@ export const api = {
   pageText: (doc: number, page: number) => invoke<TextLine[]>("page_text", { doc, page }),
   pageLinks: (doc: number, page: number) => invoke<Link[]>("page_links", { doc, page }),
   textLines: (doc: number, start: number, count: number) => invoke<Lines>("text_lines", { doc, start, count }),
-  textSearch: (doc: number, needle: string) => invoke<[number, number][]>("text_search", { doc, needle }),
+  textSearch: (doc: number, needle: string, limit: number) => invoke<[number, number][]>("text_search", { doc, needle, limit }),
   sheetInfo: (doc: number, sheet: number) => invoke<SheetInfo>("sheet_info", { doc, sheet }),
   sheetCells: (doc: number, sheet: number, rows: [number, number], cols: [number, number]) =>
     invoke<string[][]>("sheet_cells", { doc, sheet, rows, cols }),
