@@ -276,6 +276,26 @@
     }
   }
 
+  function onCopy(e: ClipboardEvent) {
+    const sel = getSelection();
+    if (!sel?.rangeCount || sel.isCollapsed || !e.clipboardData) return;
+    const range = sel.getRangeAt(0);
+    const lines: string[] = [];
+    for (const span of scroller.querySelectorAll(".text-layer span")) {
+      const text = span.firstChild;
+      if (!text || !range.intersectsNode(text)) continue;
+      const part = document.createRange();
+      part.selectNodeContents(text);
+      if (range.compareBoundaryPoints(Range.START_TO_START, part) > 0) part.setStart(range.startContainer, range.startOffset);
+      if (range.compareBoundaryPoints(Range.END_TO_END, part) < 0) part.setEnd(range.endContainer, range.endOffset);
+      lines.push(part.toString());
+    }
+    const copied = lines.filter(Boolean).join("\n");
+    if (!copied) return;
+    e.preventDefault();
+    e.clipboardData.setData("text/plain", copied);
+  }
+
   function followLink(link: Link, e: MouseEvent) {
     e.preventDefault();
     if (link.page !== null) s.goTo(link.page);
@@ -335,6 +355,7 @@
   bind:this={scroller}
   onscroll={onScroll}
   onwheel={onWheel}
+  oncopy={onCopy}
   tabindex="-1"
   role="document"
   aria-label="Document pages"
@@ -388,7 +409,7 @@
                   style:top="{line.rect.y * css}px"
                   style:font-size="{line.rect.h * css}px"
                   style:transform="scaleX({line.sx})">{line.text}</span
-                ><br />
+                >
               {/each}
             </div>
           {/if}
@@ -475,9 +496,6 @@
     color: transparent;
     transform-origin: 0 0;
     cursor: text;
-  }
-  .text-layer br {
-    display: none;
   }
   .text-layer ::selection {
     background: oklch(60% 0.15 240 / 0.35);
