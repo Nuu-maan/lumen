@@ -105,17 +105,43 @@
           for (let bc = Math.floor(ca / BLOCK_COLS); bc <= Math.floor(cb / BLOCK_COLS); bc++) void ensure(br, bc);
   });
 
+  // Each sheet keeps its own scroll position when you switch away and back.
+  const positions = new Map<number, [number, number]>();
+  let shownSheet = -1;
   $effect(() => {
-    void sheet;
+    const next = sheet;
+    if (!scroller) return;
+    if (shownSheet >= 0) positions.set(shownSheet, [scroller.scrollTop, scroller.scrollLeft]);
+    shownSheet = next;
     widths = [];
-    if (scroller) scroller.scrollTop = scroller.scrollLeft = 0;
+    const [top, left] = positions.get(next) ?? [0, 0];
+    scroller.scrollTop = top;
+    scroller.scrollLeft = left;
   });
+
+  // When horizontal scrolling stops part-way through a column, settle on the nearest column edge,
+  // so no sliver of a column hides under the frozen ones.
+  let settle = 0;
+  function settleColumns() {
+    clearTimeout(settle);
+    settle = window.setTimeout(() => {
+      const x = scroller.scrollLeft + frozenW;
+      const c = colAt(x);
+      const start = xs[c];
+      const end = xs[c + 1];
+      if (x === start || c >= cols - 1) return;
+      const target = (x - start < end - x ? start : end) - frozenW;
+      const instant = matchMedia("(prefers-reduced-motion: reduce)").matches;
+      scroller.scrollTo({ left: Math.max(0, target), behavior: instant ? "auto" : "smooth" });
+    }, 150);
+  }
 
   const range = (a: number, b: number) => Array.from({ length: Math.max(0, b - a + 1) }, (_, i) => a + i);
   const isNumeric = (v: string | undefined) => !!v && /^-?[\d.,]+%?$/.test(v);
 
   let frame = 0;
   function onScroll() {
+    if (scroller.scrollLeft !== scrollLeft) settleColumns();
     if (frame) return;
     frame = requestAnimationFrame(() => {
       frame = 0;
