@@ -123,6 +123,7 @@ export const pageUrl = (doc: number, page: number, width: number) => `${protocol
 
 export const api = {
   ready: () => invoke<string[]>("app_ready"),
+  existingPaths: (paths: string[]) => invoke<string[]>("existing_paths", { paths }),
   benchMark: (name: string, ms: number) => invoke<void>("bench_mark", { name, ms }),
   open: (path: string, password?: string) =>
     invoke<Opened>("open_document", { path, password, preferMsOffice: localStorage.getItem("lumen.msoffice") !== "0" }),

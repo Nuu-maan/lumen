@@ -7,7 +7,8 @@
   import { printImage, printPaged } from "./lib/print";
   import { openPath as systemOpen, openUrl } from "@tauri-apps/plugin-opener";
   import { api, converterLabel } from "./lib/api";
-  import { store, activeTab, openPath, load, closeTab, cycleTab, forgetRecent, openExtracted, retryOffice } from "./lib/tabs.svelte";
+  import { store, activeTab, openPath, load, closeTab, cycleTab, forgetRecent, openExtracted, refreshRecent, retryOffice } from "./lib/tabs.svelte";
+  import { homeDir } from "@tauri-apps/api/path";
   import { formatSize, kbd } from "./lib/format";
   import { PagedState, type Fit } from "./lib/paged.svelte";
   import SheetView from "./views/SheetView.svelte";
@@ -28,6 +29,10 @@
   let password = $state("");
   let pendingLink = $state<string | null>(null);
   let tabList = $state<HTMLElement>();
+  let home = $state("");
+
+  // On macOS and Linux the home folder is shown as ~, so the user name isn't spelled out.
+  const tidy = (dir: string) => (home.startsWith("/") && (dir === home || dir.startsWith(home + "/")) ? "~" + dir.slice(home.length) : dir);
 
   function scrollTabs(e: WheelEvent) {
     if (!tabList || Math.abs(e.deltaX) > Math.abs(e.deltaY)) return;
@@ -209,6 +214,8 @@
     ];
     requestAnimationFrame(() => requestAnimationFrame(() => forwarded.then(api.ready).then(openAll)));
     void api.msOfficeAvailable().then((v) => (msOffice = v));
+    void refreshRecent();
+    void homeDir().then((h) => (home = h.replace(/[\\/]$/, "")), () => {});
     return () => unlisten.forEach((u) => u.then((f) => f()));
   });
 
@@ -565,7 +572,7 @@
               <li>
                 <button class="recent-item" title={path} onclick={() => openPath(path)}>
                   <span class="recent-name">{path.split(/[\\/]/).pop()}</span>
-                  <span class="recent-dir muted">{path.replace(/[\\/][^\\/]*$/, "")}</span>
+                  <span class="recent-dir muted">{tidy(path.replace(/[\\/][^\\/]*$/, ""))}</span>
                 </button>
                 <button class="btn" aria-label="Remove {path} from recent files" title="Remove from recent files" onclick={() => forgetRecent(path)}>
                   <Icon name="close" size={14} />

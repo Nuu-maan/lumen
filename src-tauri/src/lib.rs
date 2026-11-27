@@ -153,6 +153,27 @@ fn search(reg: Reg<'_>, doc: u32, needle: String, from_page: usize, on_event: Ch
     Ok(())
 }
 
+/// A canonical path without Windows' verbatim prefix, so it reads like the path the user typed.
+fn plain_path(p: &std::path::Path) -> String {
+    let s = p.to_string_lossy().into_owned();
+    if let Some(rest) = s.strip_prefix(r"\\?\UNC\") {
+        return format!(r"\\{rest}");
+    }
+    s.strip_prefix(r"\\?\").map(str::to_owned).unwrap_or(s)
+}
+
+/// Recent files that still exist, resolved through symlinks and without duplicates, in the original order.
+#[tauri::command]
+fn existing_paths(paths: Vec<String>) -> Vec<String> {
+    let mut seen = std::collections::HashSet::new();
+    paths
+        .into_iter()
+        .filter_map(|p| std::fs::canonicalize(p).ok())
+        .map(|p| plain_path(&p))
+        .filter(|p| seen.insert(p.clone()))
+        .collect()
+}
+
 fn path_args(args: impl Iterator<Item = String>, cwd: &std::path::Path) -> Vec<String> {
     args.filter(|a| !a.starts_with('-')).map(|a| cwd.join(a).to_string_lossy().into_owned()).collect()
 }
@@ -300,6 +321,7 @@ pub fn run() {
         .manage(registry)
         .invoke_handler(tauri::generate_handler![
             app_ready,
+            existing_paths,
             bench_mark,
             open_document,
             office_exact,
@@ -328,4 +350,32 @@ pub fn run() {
             }
             _ => {}
         });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn verbatim_prefixes_are_removed() {
+        assert_eq!(plain_path(std::path::Path::new(r"\\?\C:\docs\a.pdf")), r"C:\docs\a.pdf");
+        assert_eq!(plain_path(std::path::Path::new(r"\\?\UNC\server\share\a.pdf")), r"\\server\share\a.pdf");
+        assert_eq!(plain_path(std::path::Path::new("/home/a/b.pdf")), "/home/a/b.pdf");
+    }
+
+    #[test]
+    fn missing_and_duplicate_paths_are_dropped() {
+        let dir = std::env::temp_dir().join(format!("lumen-recent-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("a.txt");
+        std::fs::write(&file, b"x").unwrap();
+        let same = dir.join(".").join("a.txt");
+        let kept = existing_paths(vec![
+            file.to_string_lossy().into_owned(),
+            dir.join("gone.txt").to_string_lossy().into_owned(),
+            same.to_string_lossy().into_owned(),
+        ]);
+        assert_eq!(kept.len(), 1);
+        assert!(kept[0].ends_with("a.txt"));
+    }
 }
