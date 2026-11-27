@@ -281,6 +281,13 @@ pub fn run() {
                 let _ = w.set_focus();
             }
         }))
+        .plugin(
+            // Size and position are remembered between launches; fullscreen isn't, so quitting
+            // during a presentation doesn't reopen Lumen fullscreen.
+            tauri_plugin_window_state::Builder::default()
+                .with_state_flags(tauri_plugin_window_state::StateFlags::all() - tauri_plugin_window_state::StateFlags::FULLSCREEN)
+                .build(),
+        )
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .register_asynchronous_uri_scheme_protocol("lumen", move |_ctx, request, responder| {
