@@ -483,7 +483,18 @@
             <Icon name="lock" size={20} />
             <h1>{t.name} is password protected</h1>
             <p class="muted">Enter the password to open it. Lumen doesn't store it.</p>
-            <input class="field" type="password" bind:value={password} aria-label="Password" autocomplete="off" />
+            <input
+              class="field"
+              type="password"
+              bind:value={password}
+              aria-label="Password"
+              autocomplete="off"
+              {@attach (el) => {
+                void tab.view;
+                el.focus();
+                el.select();
+              }}
+            />
             {#if tab.view.wrong}<p class="error" role="alert">That password didn't work. Check caps lock and try again.</p>{/if}
             <div class="row">
               <button class="btn secondary" type="button" onclick={() => closeTab(t.id)}>Close tab</button>
