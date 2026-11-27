@@ -78,7 +78,7 @@ impl PagedEngine for MupdfDoc {
         }
         let count = doc.page_count().map_err(|e| OpenError::Failed(e.to_string()))?.max(0) as usize;
         if count == 0 {
-            return Err(OpenError::Failed("The document has no pages.".into()));
+            return Err(OpenError::Failed("This file is damaged or incomplete, so no pages could be read from it.".into()));
         }
         let mut sizes = Vec::with_capacity(count);
         let mut origins = Vec::with_capacity(count);
