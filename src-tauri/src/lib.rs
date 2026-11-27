@@ -70,7 +70,13 @@ async fn sheet_info(reg: Reg<'_>, doc: u32, sheet: usize) -> Result<engines::she
 }
 
 #[tauri::command]
-async fn sheet_cells(reg: Reg<'_>, doc: u32, sheet: usize, rows: [usize; 2], cols: [usize; 2]) -> Result<Vec<Vec<String>>, String> {
+async fn sheet_styles(reg: Reg<'_>, doc: u32, sheet: usize) -> Result<engines::sheet::SheetStyles, String> {
+    let d = reg.sheet(doc).ok_or("document is closed")?;
+    reg.scheduler.run(render::PRIO_NEAR, move || d.styles(sheet)).await
+}
+
+#[tauri::command]
+async fn sheet_cells(reg: Reg<'_>, doc: u32, sheet: usize, rows: [usize; 2], cols: [usize; 2]) -> Result<engines::sheet::Cells, String> {
     let d = reg.sheet(doc).ok_or("document is closed")?;
     let (rows, cols) = (rows[0]..rows[1].min(rows[0] + 2000), cols[0]..cols[1].min(cols[0] + 256));
     reg.scheduler.run(render::PRIO_VISIBLE, move || d.cells(sheet, rows, cols)).await
@@ -340,6 +346,7 @@ pub fn run() {
             export_pdf,
             sheet_info,
             sheet_cells,
+            sheet_styles,
             set_viewport,
             page_text,
             page_links,
