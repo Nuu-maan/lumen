@@ -225,11 +225,16 @@ pub async fn open(reg: &Arc<Registry>, path: PathBuf, password: Option<String>, 
                     move || {
                         let key = office::content_key(&path, converter).ok();
                         let cached = key.as_ref().is_some_and(|k| cache.join(format!("{k}.pdf")).exists());
+                        // Slides keep their preview when cached, because the speaker notes come from it.
                         let fast = match id {
                             _ if encrypted => None,
-                            "docx" if cached => None,
-                            "docx" => fast::docx(&path),
                             "pptx" => fast::pptx(&path),
+                            "odp" => fast::odp(&path),
+                            _ if cached => None,
+                            "docx" => fast::docx(&path),
+                            "odt" => fast::odt(&path),
+                            "rtf" => fast::rtf(&path),
+                            "pages" | "key" => fast::iwork(&path),
                             _ => None,
                         };
                         (key, fast)
