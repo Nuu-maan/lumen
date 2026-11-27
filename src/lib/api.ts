@@ -138,6 +138,7 @@ export const svgUrl = (doc: number, page: number) => `${protocolBase}/svg/${doc}
 
 export const api = {
   ready: () => invoke<string[]>("app_ready"),
+  benchMode: () => invoke<string | null>("bench_mode"),
   existingPaths: (paths: string[]) => invoke<string[]>("existing_paths", { paths }),
   benchMark: (name: string, ms: number) => invoke<void>("bench_mark", { name, ms }),
   open: (path: string, password?: string) =>

@@ -191,6 +191,8 @@ Measured with `cargo run --release --bin bench`, which launches the real release
 | Excel workbook, 100,000 rows | **548 ms** | 1 s |
 | 500 MB log file, first screen | **18 ms** | 200 ms |
 | Reopen an Office file (cached) | **65 ms** | 200 ms |
+| Fast scroll through a 100-page PDF, 95th percentile frame | **6.1 ms** | 16.7 ms (60 fps) |
+| Frames with no page on screen while flinging | **0%** | 1% |
 | Idle memory, 100-page PDF | 196 MB | 120 MB ([#3](https://github.com/Nuu-maan/lumen/issues/3)) |
 
 Lumen's own process uses about 11 MB of memory; the rest is the system webview (WebView2 on Windows). Rendering fidelity is checked against a reference corpus, see [FIDELITY.md](FIDELITY.md).

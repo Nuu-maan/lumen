@@ -329,7 +329,36 @@
     }, 120);
   }
 
+  // LUMEN_BENCH=scroll_frame: a scripted fast fling, reporting the 95th percentile frame time and how
+  // often no page preview was on screen.
+  async function scrollProbe() {
+    await new Promise((r) => setTimeout(r, 1500));
+    const deltas: number[] = [];
+    let blank = 0;
+    let last = performance.now();
+    const end = last + 3000;
+    while (performance.now() < end) {
+      await new Promise((r) => requestAnimationFrame(r));
+      const now = performance.now();
+      deltas.push(now - last);
+      last = now;
+      scroller.scrollTop += 90;
+      const seen = [...scroller.querySelectorAll<HTMLImageElement>(".base")].filter((img) => {
+        const r = img.getBoundingClientRect();
+        return r.bottom > 0 && r.top < innerHeight && img.complete && img.naturalWidth > 0;
+      });
+      if (!seen.length) blank++;
+    }
+    deltas.sort((a, b) => a - b);
+    await api.benchMark("scroll_blank_pct", (blank / deltas.length) * 100);
+    await api.benchMark("scroll_frame", deltas[Math.floor(deltas.length * 0.95)]);
+  }
+
   onMount(() => {
+    if (!present)
+      void api.benchMode().then((m) => {
+        if (m === "scroll_frame") void scrollProbe();
+      });
     const ro = new ResizeObserver(() => {
       viewW = scroller.clientWidth;
       viewH = scroller.clientHeight;

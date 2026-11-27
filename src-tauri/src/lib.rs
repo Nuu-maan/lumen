@@ -196,10 +196,20 @@ fn app_ready(app: tauri::AppHandle, launch: State<Launch>, pending: State<Pendin
     paths
 }
 
+/// The benchmark probe this run was started for, if any (LUMEN_BENCH).
+#[tauri::command]
+fn bench_mode() -> Option<String> {
+    std::env::var("LUMEN_BENCH").ok()
+}
+
 #[tauri::command]
 fn bench_mark(app: tauri::AppHandle, name: String, ms: f64) {
     let Ok(wanted) = std::env::var("LUMEN_BENCH") else { return };
-    println!("{name}_ms={ms:.1}");
+    if name.ends_with("_pct") {
+        println!("{name}={ms:.1}");
+    } else {
+        println!("{name}_ms={ms:.1}");
+    }
     if wanted == name {
         app.exit(0);
     }
@@ -344,6 +354,7 @@ pub fn run() {
             app_ready,
             existing_paths,
             bench_mark,
+            bench_mode,
             open_document,
             office_exact,
             ms_office_available,
