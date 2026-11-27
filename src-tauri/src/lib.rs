@@ -228,6 +228,14 @@ fn handle_protocol(reg: &Arc<Registry>, path: &str, responder: tauri::UriSchemeR
         });
     }
     let Some(doc) = reg.paged(id) else { return responder.respond(not_found()) };
+    if let docs::TileRequest::Svg { page } = request {
+        return reg.scheduler.submit(render::PRIO_VISIBLE, move || {
+            responder.respond(match doc.engine.page_svg(page) {
+                Ok(svg) => respond(StatusCode::OK, "image/svg+xml", svg.into_bytes()),
+                Err(_) => not_found(),
+            })
+        });
+    }
     let Some((prio, job)) = docs::render_request(&doc, request, None) else {
         return responder.respond(respond(StatusCode::NO_CONTENT, "text/plain", Vec::new()));
     };

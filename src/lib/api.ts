@@ -134,6 +134,7 @@ export const tileUrl = (doc: number, page: number, scale: number, x: number, y: 
 export const fileUrl = (doc: number) => `${protocolBase}/file/${doc}`;
 
 export const pageUrl = (doc: number, page: number, width: number) => `${protocolBase}/page/${doc}/${page}/${width}`;
+export const svgUrl = (doc: number, page: number) => `${protocolBase}/svg/${doc}/${page}`;
 
 export const api = {
   ready: () => invoke<string[]>("app_ready"),

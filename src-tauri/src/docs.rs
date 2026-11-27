@@ -157,12 +157,13 @@ pub enum TileRequest {
     File,
     Tile { page: usize, scale: f32, rect: Rect },
     Page { page: usize, width: u32 },
+    Svg { page: usize },
 }
 
 pub fn render_request(doc: &Arc<PagedDoc>, request: TileRequest, prio_override: Option<u8>) -> Option<(u8, Box<dyn FnOnce() -> Result<Vec<u8>, String> + Send>)> {
     let doc = doc.clone();
     match request {
-        TileRequest::File => None,
+        TileRequest::File | TileRequest::Svg { .. } => None,
         TileRequest::Tile { page, scale, rect } => {
             if page >= doc.engine.page_count() {
                 return None;
@@ -214,6 +215,7 @@ pub fn parse_tile_path(path: &str) -> Option<(u32, TileRequest)> {
             },
         )),
         &"file" if parts.len() >= 2 => Some((parts[1].parse().ok()?, TileRequest::File)),
+        &"svg" if parts.len() == 3 => Some((parts[1].parse().ok()?, TileRequest::Svg { page: parts[2].parse().ok()? })),
         &"page" if parts.len() == 4 => Some((
             parts[1].parse().ok()?,
             TileRequest::Page { page: parts[2].parse().ok()?, width: (num(3)? as u32).clamp(8, 4096) },
@@ -236,6 +238,8 @@ mod tests {
             _ => panic!("tile path did not parse"),
         }
         assert!(matches!(parse_tile_path("/page/1/0/200"), Some((1, TileRequest::Page { page: 0, width: 200 }))));
+        assert!(matches!(parse_tile_path("/svg/4/12"), Some((4, TileRequest::Svg { page: 12 }))));
+        assert!(parse_tile_path("/svg/4").is_none());
         assert!(parse_tile_path("/tile/x/0/1/0/0/1/1").is_none());
         assert!(parse_tile_path("/etc/passwd").is_none());
     }
