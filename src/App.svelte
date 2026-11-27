@@ -27,6 +27,17 @@
   let dragging = $state(false);
   let password = $state("");
   let pendingLink = $state<string | null>(null);
+  let tabList = $state<HTMLElement>();
+
+  function scrollTabs(e: WheelEvent) {
+    if (!tabList || Math.abs(e.deltaX) > Math.abs(e.deltaY)) return;
+    tabList.scrollLeft += e.deltaY;
+  }
+
+  $effect(() => {
+    void store.active;
+    tabList?.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  });
   let pageInput = $state("");
   let pagedView: PagedView | undefined = $state();
   let presenting = $state(false);
@@ -208,7 +219,8 @@
 
 <div class="app">
   {#if store.tabs.length}
-    <header class="tabs" role="tablist" aria-label="Open files">
+    <header class="tabs">
+      <div class="tab-list" role="tablist" aria-label="Open files" bind:this={tabList} onwheel={scrollTabs}>
       {#each store.tabs as t (t.id)}
         <div class="tab" class:active={t.id === store.active} role="tab" aria-selected={t.id === store.active}>
           <button class="tab-label" title={t.path} onclick={() => (store.active = t.id)} onauxclick={(e) => e.button === 1 && closeTab(t.id)}>
@@ -219,6 +231,7 @@
           </button>
         </div>
       {/each}
+      </div>
       <button class="btn new-tab" title="Open file ({kbd('O')})" aria-label="Open file" onclick={chooseFiles}><Icon name="open" /></button>
     </header>
 
@@ -598,14 +611,23 @@
     flex: none;
     display: flex;
     align-items: stretch;
-    gap: 2px;
     padding: 4px 8px 0;
     background: var(--gray-1);
+  }
+  .tab-list {
+    flex: 0 1 auto;
+    min-width: 0;
+    display: flex;
+    gap: 2px;
     overflow-x: auto;
     scrollbar-width: none;
   }
+  .tab-list::-webkit-scrollbar {
+    display: none;
+  }
   .tab {
     position: relative;
+    flex: 0 1 auto;
     display: flex;
     align-items: center;
     max-width: 220px;
@@ -645,6 +667,7 @@
     padding: 0;
   }
   .new-tab {
+    flex: none;
     align-self: center;
     margin-left: 4px;
   }
@@ -667,6 +690,15 @@
     padding: 0 8px;
     background: var(--surface);
     border-bottom: 1px solid var(--gray-5);
+    overflow-x: auto;
+    scrollbar-width: none;
+    white-space: nowrap;
+  }
+  .toolbar::-webkit-scrollbar {
+    display: none;
+  }
+  .toolbar > :global(:not(.grow)) {
+    flex: none;
   }
   .sep {
     width: 1px;
@@ -681,6 +713,7 @@
     display: flex;
     align-items: center;
     gap: 6px;
+    white-space: nowrap;
   }
   .page-input {
     width: 48px;
@@ -724,6 +757,8 @@
     color: var(--text-2);
     background: var(--surface);
     border-top: 1px solid var(--gray-5);
+    white-space: nowrap;
+    overflow: hidden;
   }
   .tnum {
     font-variant-numeric: tabular-nums;
