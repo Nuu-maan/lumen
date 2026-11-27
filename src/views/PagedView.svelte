@@ -86,7 +86,10 @@
     return [first, last] as const;
   });
 
-  const windowStart = $derived(Math.max(0, visible[0] - 2));
+  // Page frames exist for about two screens above and below the view, so a fast fling on a slow
+  // renderer still shows pages (with their small preview) instead of an empty pane.
+  const windowStart = $derived(Math.max(0, Math.min(visible[0] - 2, slotAt(scrollTop - viewH * 2))));
+  const windowEnd = $derived(Math.max(visible[1] + 3, slotAt(scrollTop + viewH * 3) + 1));
 
   $effect(() => {
     if (present || s.mode === "single" || !layout.slots.length) return;
@@ -361,7 +364,7 @@
   aria-label="Document pages"
 >
   <div class="content" style:height="{layout.height}px" style:width="{layout.width}px">
-    {#each layout.slots.slice(windowStart, visible[1] + 3) as slot, k (slot.index)}
+    {#each layout.slots.slice(windowStart, windowEnd) as slot, k (slot.index)}
       {@const p = s.pages[slot.index]}
       {@const sharp = tileRange[0] <= windowStart + k && windowStart + k <= tileRange[1]}
       <div class="slot" style:top="{slot.top}px" style:left="{slot.left}px" style:width="{slot.w}px" style:height="{slot.h}px">
