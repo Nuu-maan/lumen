@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { api, type SheetInfo } from "../lib/api";
+  import { api, type CellStyle, type SheetInfo } from "../lib/api";
   import { openTimes } from "../lib/tabs.svelte";
 
   let {
@@ -23,8 +23,11 @@
   let scrollTop = $state(0);
   let scrollLeft = $state(0);
   let blocks = $state<Record<string, string[][]>>({});
+  let looks = $state<Record<string, CellStyle>>({});
+  let merges = $state<[number, number, number, number][]>([]);
   let widths = $state<number[]>([]);
   const pending = new Set<string>();
+  let generation = 0;
 
   const rows = $derived(Math.max(info.rows, 1));
   const cols = $derived(Math.max(info.cols, 1));
@@ -71,13 +74,16 @@
     const key = `${sheet}/${br}/${bc}`;
     if (blocks[key] || pending.has(key)) return;
     pending.add(key);
+    const gen = generation;
     const r0 = br * BLOCK_ROWS;
     const c0 = bc * BLOCK_COLS;
     const data = await api.sheetCells(doc, sheet, [r0, Math.min(rows, r0 + BLOCK_ROWS)], [c0, Math.min(cols, c0 + BLOCK_COLS)]).catch(() => null);
+    if (gen !== generation) return;
     pending.delete(key);
     if (!data) return;
-    blocks[key] = data;
-    if (br === 0) estimateWidths(c0, data);
+    blocks[key] = data.values;
+    for (const s of data.styles) looks[`${sheet}/${s.r}/${s.c}`] = s;
+    if (br === 0) estimateWidths(c0, data.values);
   }
 
   function estimateWidths(c0: number, data: string[][]) {
@@ -89,6 +95,18 @@
     }
     widths = next;
   }
+
+  // Each merged range draws once, from its top-left cell, across all the cells it covers.
+  // shortcut: a merge whose top-left cell is scrolled out of view isn't drawn; fine for titles and headers, revisit for tall merges.
+  const merged = $derived.by(() => {
+    const anchors = new Map<string, [number, number]>();
+    const covered = new Set<string>();
+    for (const [r0, c0, r1, c1] of merges) {
+      anchors.set(`${r0}/${c0}`, [r1, c1]);
+      for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) if (r !== r0 || c !== c0) covered.add(`${r}/${c}`);
+    }
+    return { anchors, covered };
+  });
 
   function value(r: number, c: number) {
     return blocks[`${sheet}/${Math.floor(r / BLOCK_ROWS)}/${Math.floor(c / BLOCK_COLS)}`]?.[r % BLOCK_ROWS]?.[c % BLOCK_COLS];
@@ -105,17 +123,57 @@
           for (let bc = Math.floor(ca / BLOCK_COLS); bc <= Math.floor(cb / BLOCK_COLS); bc++) void ensure(br, bc);
   });
 
+  // Each sheet keeps its own scroll position when you switch away and back.
+  const positions = new Map<number, [number, number]>();
+  let shownSheet = -1;
   $effect(() => {
-    void sheet;
+    const next = sheet;
+    if (!scroller) return;
+    if (shownSheet >= 0) positions.set(shownSheet, [scroller.scrollTop, scroller.scrollLeft]);
+    shownSheet = next;
     widths = [];
-    if (scroller) scroller.scrollTop = scroller.scrollLeft = 0;
+    merges = [];
+    // Formatting loads after the values; when it arrives the visible cells are fetched again with it.
+    void api.sheetStyles(doc, next).then(
+      (s) => {
+        if (next !== sheet) return;
+        merges = s.merges;
+        if (!s.styled) return;
+        generation++;
+        pending.clear();
+        blocks = {};
+      },
+      () => {},
+    );
+    const [top, left] = positions.get(next) ?? [0, 0];
+    scroller.scrollTop = top;
+    scroller.scrollLeft = left;
   });
 
+  // When horizontal scrolling stops part-way through a column, settle on the nearest column edge,
+  // so no sliver of a column hides under the frozen ones.
+  let settle = 0;
+  function settleColumns() {
+    clearTimeout(settle);
+    settle = window.setTimeout(() => {
+      const x = scroller.scrollLeft + frozenW;
+      const c = colAt(x);
+      const start = xs[c];
+      const end = xs[c + 1];
+      if (x === start || c >= cols - 1) return;
+      const target = (x - start < end - x ? start : end) - frozenW;
+      const instant = matchMedia("(prefers-reduced-motion: reduce)").matches;
+      scroller.scrollTo({ left: Math.max(0, target), behavior: instant ? "auto" : "smooth" });
+    }, 150);
+  }
+
   const range = (a: number, b: number) => Array.from({ length: Math.max(0, b - a + 1) }, (_, i) => a + i);
-  const isNumeric = (v: string | undefined) => !!v && /^-?[\d.,]+%?$/.test(v);
+  // Numbers, including formatted ones like $1,250.00, (1,500.00) and 12.4%, are right-aligned like in Excel.
+  const isNumeric = (v: string | undefined) => !!v && /^[-(]?[$€£¥₹]? ?[0-9.,]*[0-9][0-9.,]*%?[)]? ?$/.test(v);
 
   let frame = 0;
   function onScroll() {
+    if (scroller.scrollLeft !== scrollLeft) settleColumns();
     if (frame) return;
     frame = requestAnimationFrame(() => {
       frame = 0;
@@ -141,10 +199,26 @@
 </script>
 
 {#snippet cellAt(r: number, c: number, left: number, top: number)}
-  {@const v = value(r, c)}
-  <div class="cell" class:num={isNumeric(v)} style:left="{left}px" style:top="{top}px" style:width="{widths[c] ?? 96}px" title={v && v.length > 24 ? v : undefined}>
-    {v ?? ""}
-  </div>
+  {#if !merged.covered.has(`${r}/${c}`)}
+    {@const v = value(r, c)}
+    {@const look = looks[`${sheet}/${r}/${c}`]}
+    {@const span = merged.anchors.get(`${r}/${c}`)}
+    <div
+      class="cell"
+      class:num={isNumeric(v)}
+      class:merged={!!span}
+      style:left="{left}px"
+      style:top="{top}px"
+      style:width="{span ? xs[Math.min(span[1], cols - 1) + 1] - xs[c] : (widths[c] ?? 96)}px"
+      style:height={span ? `${(span[0] - r + 1) * ROW_H}px` : undefined}
+      style:color={look?.color}
+      style:background-color={look?.fill ?? (span ? "#fff" : undefined)}
+      style:font-weight={look?.bold ? 600 : undefined}
+      title={v && v.length > 24 ? v : undefined}
+    >
+      {v ?? ""}
+    </div>
+  {/if}
 {/snippet}
 
 <div class="sheet-view">
@@ -278,6 +352,9 @@
   .cell.num {
     text-align: right;
     font-variant-numeric: tabular-nums;
+  }
+  .cell.merged {
+    z-index: 1;
   }
   .col-heads {
     top: 0;

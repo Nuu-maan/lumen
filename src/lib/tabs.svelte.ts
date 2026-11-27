@@ -108,6 +108,13 @@ function remember(path: string) {
   localStorage.setItem(RECENT_KEY, JSON.stringify(store.recent));
 }
 
+/** Drops recent files that were deleted and merges paths that point at the same file. */
+export async function refreshRecent() {
+  const kept = await api.existingPaths(store.recent).catch(() => store.recent);
+  store.recent = kept;
+  localStorage.setItem(RECENT_KEY, JSON.stringify(kept));
+}
+
 export function forgetRecent(path: string) {
   store.recent = store.recent.filter((p) => p !== path);
   localStorage.setItem(RECENT_KEY, JSON.stringify(store.recent));

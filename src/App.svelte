@@ -7,7 +7,8 @@
   import { printImage, printPaged } from "./lib/print";
   import { openPath as systemOpen, openUrl } from "@tauri-apps/plugin-opener";
   import { api, converterLabel } from "./lib/api";
-  import { store, activeTab, openPath, load, closeTab, cycleTab, forgetRecent, openExtracted, retryOffice } from "./lib/tabs.svelte";
+  import { store, activeTab, openPath, load, closeTab, cycleTab, forgetRecent, openExtracted, refreshRecent, retryOffice } from "./lib/tabs.svelte";
+  import { homeDir } from "@tauri-apps/api/path";
   import { formatSize, kbd } from "./lib/format";
   import { PagedState, type Fit } from "./lib/paged.svelte";
   import SheetView from "./views/SheetView.svelte";
@@ -27,6 +28,23 @@
   let dragging = $state(false);
   let password = $state("");
   let pendingLink = $state<string | null>(null);
+  // Matches SHEET_PRINT_PAGES in open.rs: a spreadsheet's print layout stops after this many pages.
+  const SHEET_PRINT_PAGES = 100;
+  let tabList = $state<HTMLElement>();
+  let home = $state("");
+
+  // On macOS and Linux the home folder is shown as ~, so the user name isn't spelled out.
+  const tidy = (dir: string) => (home.startsWith("/") && (dir === home || dir.startsWith(home + "/")) ? "~" + dir.slice(home.length) : dir);
+
+  function scrollTabs(e: WheelEvent) {
+    if (!tabList || Math.abs(e.deltaX) > Math.abs(e.deltaY)) return;
+    tabList.scrollLeft += e.deltaY;
+  }
+
+  $effect(() => {
+    void store.active;
+    tabList?.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  });
   let pageInput = $state("");
   let pagedView: PagedView | undefined = $state();
   let presenting = $state(false);
@@ -74,6 +92,15 @@
     }
   }
 
+  // The presenter hint and cursor show when presenting starts or the mouse moves, then get out of the way.
+  let hintIdle = $state(false);
+  let hintTimer = 0;
+  function wakeHint() {
+    hintIdle = false;
+    clearTimeout(hintTimer);
+    hintTimer = window.setTimeout(() => (hintIdle = true), 2000);
+  }
+
   let savedView: { fit: Fit; zoom: number } | null = null;
   async function present(on: boolean) {
     if (!paged || on === presenting) return;
@@ -85,6 +112,7 @@
       paged.zoom = savedView.zoom;
     }
     presenting = on;
+    if (on) wakeHint();
     await getCurrentWindow().setFullscreen(on).catch(() => {});
   }
 
@@ -198,6 +226,8 @@
     ];
     requestAnimationFrame(() => requestAnimationFrame(() => forwarded.then(api.ready).then(openAll)));
     void api.msOfficeAvailable().then((v) => (msOffice = v));
+    void refreshRecent();
+    void homeDir().then((h) => (home = h.replace(/[\\/]$/, "")), () => {});
     return () => unlisten.forEach((u) => u.then((f) => f()));
   });
 
@@ -208,7 +238,8 @@
 
 <div class="app">
   {#if store.tabs.length}
-    <header class="tabs" role="tablist" aria-label="Open files">
+    <header class="tabs">
+      <div class="tab-list" role="tablist" aria-label="Open files" bind:this={tabList} onwheel={scrollTabs}>
       {#each store.tabs as t (t.id)}
         <div class="tab" class:active={t.id === store.active} role="tab" aria-selected={t.id === store.active}>
           <button class="tab-label" title={t.path} onclick={() => (store.active = t.id)} onauxclick={(e) => e.button === 1 && closeTab(t.id)}>
@@ -219,6 +250,7 @@
           </button>
         </div>
       {/each}
+      </div>
       <button class="btn new-tab" title="Open file ({kbd('O')})" aria-label="Open file" onclick={chooseFiles}><Icon name="open" /></button>
     </header>
 
@@ -406,6 +438,9 @@
             {#key ps.doc}
               <div class="swap swapped"><PagedView bind:this={pagedView} state={ps} onExternalLink={(uri) => (pendingLink = uri)} /></div>
             {/key}
+            {#if ps.pageCount >= SHEET_PRINT_PAGES}
+              <p class="page-limit" role="status">Showing the first {SHEET_PRINT_PAGES} pages. Open the workbook in a spreadsheet app to print all of it.</p>
+            {/if}
             {#if findOpen}
               <FindBar
                 query={ps.query}
@@ -470,7 +505,18 @@
             <Icon name="lock" size={20} />
             <h1>{t.name} is password protected</h1>
             <p class="muted">Enter the password to open it. Lumen doesn't store it.</p>
-            <input class="field" type="password" bind:value={password} aria-label="Password" autocomplete="off" />
+            <input
+              class="field"
+              type="password"
+              bind:value={password}
+              aria-label="Password"
+              autocomplete="off"
+              {@attach (el) => {
+                void tab.view;
+                el.focus();
+                el.select();
+              }}
+            />
             {#if tab.view.wrong}<p class="error" role="alert">That password didn't work. Check caps lock and try again.</p>{/if}
             <div class="row">
               <button class="btn secondary" type="button" onclick={() => closeTab(t.id)}>Close tab</button>
@@ -513,7 +559,11 @@
           <span class="badge">{tab.view.status === "converting" ? "Fast preview, rendering exact layout…" : "Fast preview"}</span>
         {:else if sheet}
           {#if sheet.mode === "print" && sheet.converter}
-            <span class="badge" class:exact={sheet.print instanceof PagedState}>{sheet.print === "converting" ? "Rendering print layout…" : converterLabel[sheet.converter]}</span>
+            <span class="badge" class:exact={sheet.print instanceof PagedState}>{sheet.print === "converting"
+                ? "Rendering print layout…"
+                : sheet.print instanceof PagedState
+                  ? converterLabel[sheet.converter]
+                  : "Print layout unavailable"}</span>
           {:else}<span class="badge">{sheet.converter ? "Fast preview (grid)" : "Exact"}</span>{/if}
         {:else if tab.view.kind === "paged"}
           {#if officeEngine && msOffice}
@@ -541,7 +591,7 @@
               <li>
                 <button class="recent-item" title={path} onclick={() => openPath(path)}>
                   <span class="recent-name">{path.split(/[\\/]/).pop()}</span>
-                  <span class="recent-dir muted">{path.replace(/[\\/][^\\/]*$/, "")}</span>
+                  <span class="recent-dir muted">{tidy(path.replace(/[\\/][^\\/]*$/, ""))}</span>
                 </button>
                 <button class="btn" aria-label="Remove {path} from recent files" title="Remove from recent files" onclick={() => forgetRecent(path)}>
                   <Icon name="close" size={14} />
@@ -560,7 +610,7 @@
 </div>
 
 {#if presenting && paged}
-  <div class="presenter" role="dialog" aria-label="Presentation">
+  <div class="presenter" class:idle={hintIdle} role="dialog" aria-label="Presentation" tabindex="-1" onpointermove={wakeHint}>
     <PagedView state={paged} present onExternalLink={(uri) => (pendingLink = uri)} />
     <div class="presenter-hint">Slide {paged.page + 1} of {paged.pageCount}. Press Esc to exit.</div>
   </div>
@@ -580,7 +630,13 @@
         class="btn primary"
         onclick={() => {
           pendingLink = null;
-          void openUrl(link);
+          openUrl(link).catch(async () => {
+            const copied = await navigator.clipboard.writeText(link).then(
+              () => true,
+              () => false,
+            );
+            flash(copied ? "No browser could open the link. The address is copied, so you can paste it." : "No browser could open the link.");
+          });
         }}>Open link</button
       >
     {/snippet}
@@ -598,14 +654,23 @@
     flex: none;
     display: flex;
     align-items: stretch;
-    gap: 2px;
     padding: 4px 8px 0;
     background: var(--gray-1);
+  }
+  .tab-list {
+    flex: 0 1 auto;
+    min-width: 0;
+    display: flex;
+    gap: 2px;
     overflow-x: auto;
     scrollbar-width: none;
   }
+  .tab-list::-webkit-scrollbar {
+    display: none;
+  }
   .tab {
     position: relative;
+    flex: 0 1 auto;
     display: flex;
     align-items: center;
     max-width: 220px;
@@ -645,6 +710,7 @@
     padding: 0;
   }
   .new-tab {
+    flex: none;
     align-self: center;
     margin-left: 4px;
   }
@@ -667,6 +733,15 @@
     padding: 0 8px;
     background: var(--surface);
     border-bottom: 1px solid var(--gray-5);
+    overflow-x: auto;
+    scrollbar-width: none;
+    white-space: nowrap;
+  }
+  .toolbar::-webkit-scrollbar {
+    display: none;
+  }
+  .toolbar > :global(:not(.grow)) {
+    flex: none;
   }
   .sep {
     width: 1px;
@@ -681,6 +756,7 @@
     display: flex;
     align-items: center;
     gap: 6px;
+    white-space: nowrap;
   }
   .page-input {
     width: 48px;
@@ -724,6 +800,8 @@
     color: var(--text-2);
     background: var(--surface);
     border-top: 1px solid var(--gray-5);
+    white-space: nowrap;
+    overflow: hidden;
   }
   .tnum {
     font-variant-numeric: tabular-nums;
@@ -799,8 +877,26 @@
     opacity: 0;
     transition: opacity 200ms ease;
   }
-  .presenter:hover .presenter-hint {
+  .presenter:not(.idle) .presenter-hint {
     opacity: 1;
+  }
+  .presenter.idle {
+    cursor: none;
+  }
+  .page-limit {
+    position: absolute;
+    left: 50%;
+    bottom: 16px;
+    transform: translateX(-50%);
+    max-width: calc(100% - 32px);
+    padding: 6px 12px;
+    border-radius: 999px;
+    background: oklch(20% 0.01 65 / 0.85);
+    color: var(--gray-11);
+    font-size: var(--fs-1);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
   .toast {
     position: fixed;

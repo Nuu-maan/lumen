@@ -5,7 +5,9 @@ pub mod highlight;
 pub mod markup;
 pub mod mupdf;
 pub mod office;
+pub mod numfmt;
 pub mod sheet;
+pub mod xlsx_parts;
 pub mod text;
 
 use serde::Serialize;

@@ -28,6 +28,8 @@ const METRICS: &[Metric] = &[
     Metric { name: "xlsx_100k_grid_ms", budget: 1000.0, unit: "ms" },
     Metric { name: "text_500mb_first_screen_ms", budget: 200.0, unit: "ms" },
     Metric { name: "office_reopen_ms", budget: 200.0, unit: "ms" },
+    Metric { name: "scroll_frame_ms", budget: 16.7, unit: "ms" },
+    Metric { name: "scroll_blank_pct", budget: 1.0, unit: "%" },
 ];
 
 fn root() -> PathBuf {
@@ -183,6 +185,9 @@ fn measure() -> BTreeMap<&'static str, f64> {
     put("idle_ram_100p_pdf_mb", idle_ram_mb(&cache));
     let sharp = [("LUMEN_BENCH", "first_page_sharp")];
     put("pdf_first_page_ms", runs(3, || launch(&cache, &sharp, Some(&sample("text-100p.pdf")), "first_page_sharp_ms")));
+    let fling = [("LUMEN_BENCH", "scroll_frame")];
+    put("scroll_frame_ms", runs(3, || launch(&cache, &fling, Some(&sample("text-100p.pdf")), "scroll_frame_ms")));
+    put("scroll_blank_pct", launch(&cache, &fling, Some(&sample("text-100p.pdf")), "scroll_blank_pct"));
     put("pdf_100mb_first_page_ms", runs(3, || launch(&cache, &sharp, Some(&sample("images-100mb.pdf")), "first_page_sharp_ms")));
     put(
         "docx_fast_view_ms",

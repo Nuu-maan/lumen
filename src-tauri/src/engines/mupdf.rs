@@ -47,6 +47,13 @@ impl MupdfDoc {
         f(&page).ok()
     }
 
+    /// One page as SVG, for printing: vector shapes and text outlines at the page's own size.
+    pub fn page_svg(&self, page: usize) -> Result<String, String> {
+        let doc = self.doc.lock();
+        let page = doc.0.load_page(page as i32).map_err(err)?;
+        page.to_svg(&mupdf::Matrix::IDENTITY).map_err(err)
+    }
+
     pub fn export_pdf(&self, source: &Path, target: &Path) -> Result<(), String> {
         let doc = self.doc.lock();
         if doc.0.is_pdf() {
@@ -78,7 +85,7 @@ impl PagedEngine for MupdfDoc {
         }
         let count = doc.page_count().map_err(|e| OpenError::Failed(e.to_string()))?.max(0) as usize;
         if count == 0 {
-            return Err(OpenError::Failed("The document has no pages.".into()));
+            return Err(OpenError::Failed("This file is damaged or incomplete, so no pages could be read from it.".into()));
         }
         let mut sizes = Vec::with_capacity(count);
         let mut origins = Vec::with_capacity(count);

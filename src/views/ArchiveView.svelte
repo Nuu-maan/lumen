@@ -37,7 +37,9 @@
 <div class="archive">
   <div class="bar">
     <input class="field" bind:value={filter} placeholder="Filter files" aria-label="Filter files" spellcheck="false" />
-    <span class="muted">{files.length} files, {formatSize(totalSize)} uncompressed</span>
+    <span class="muted">
+      {#if filter.trim()}{shown.length} of {files.length} files{:else}{files.length} files, {formatSize(totalSize)} uncompressed{/if}
+    </span>
   </div>
   {#if failed}<p class="error" role="alert">Couldn't open {failed}</p>{/if}
   {#if files.length === 0}

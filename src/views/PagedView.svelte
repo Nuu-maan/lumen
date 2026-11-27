@@ -86,7 +86,10 @@
     return [first, last] as const;
   });
 
-  const windowStart = $derived(Math.max(0, visible[0] - 2));
+  // Page frames exist for about two screens above and below the view, so a fast fling on a slow
+  // renderer still shows pages (with their small preview) instead of an empty pane.
+  const windowStart = $derived(Math.max(0, Math.min(visible[0] - 2, slotAt(scrollTop - viewH * 2))));
+  const windowEnd = $derived(Math.max(visible[1] + 3, slotAt(scrollTop + viewH * 3) + 1));
 
   $effect(() => {
     if (present || s.mode === "single" || !layout.slots.length) return;
@@ -326,7 +329,36 @@
     }, 120);
   }
 
+  // LUMEN_BENCH=scroll_frame: a scripted fast fling, reporting the 95th percentile frame time and how
+  // often no page preview was on screen.
+  async function scrollProbe() {
+    await new Promise((r) => setTimeout(r, 1500));
+    const deltas: number[] = [];
+    let blank = 0;
+    let last = performance.now();
+    const end = last + 3000;
+    while (performance.now() < end) {
+      await new Promise((r) => requestAnimationFrame(r));
+      const now = performance.now();
+      deltas.push(now - last);
+      last = now;
+      scroller.scrollTop += 90;
+      const seen = [...scroller.querySelectorAll<HTMLImageElement>(".base")].filter((img) => {
+        const r = img.getBoundingClientRect();
+        return r.bottom > 0 && r.top < innerHeight && img.complete && img.naturalWidth > 0;
+      });
+      if (!seen.length) blank++;
+    }
+    deltas.sort((a, b) => a - b);
+    await api.benchMark("scroll_blank_pct", (blank / deltas.length) * 100);
+    await api.benchMark("scroll_frame", deltas[Math.floor(deltas.length * 0.95)]);
+  }
+
   onMount(() => {
+    if (!present)
+      void api.benchMode().then((m) => {
+        if (m === "scroll_frame") void scrollProbe();
+      });
     const ro = new ResizeObserver(() => {
       viewW = scroller.clientWidth;
       viewH = scroller.clientHeight;
@@ -361,7 +393,7 @@
   aria-label="Document pages"
 >
   <div class="content" style:height="{layout.height}px" style:width="{layout.width}px">
-    {#each layout.slots.slice(windowStart, visible[1] + 3) as slot, k (slot.index)}
+    {#each layout.slots.slice(windowStart, windowEnd) as slot, k (slot.index)}
       {@const p = s.pages[slot.index]}
       {@const sharp = tileRange[0] <= windowStart + k && windowStart + k <= tileRange[1]}
       <div class="slot" style:top="{slot.top}px" style:left="{slot.left}px" style:width="{slot.w}px" style:height="{slot.h}px">

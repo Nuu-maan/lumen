@@ -197,7 +197,11 @@ input {
   @page {
     margin: 0;
   }
-  html,
+  /* The dark colour scheme would paint the page canvas near-black on paper. */
+  :root {
+    color-scheme: light;
+  }
+  :root,
   body {
     height: auto;
     overflow: visible;

@@ -70,7 +70,13 @@ async fn sheet_info(reg: Reg<'_>, doc: u32, sheet: usize) -> Result<engines::she
 }
 
 #[tauri::command]
-async fn sheet_cells(reg: Reg<'_>, doc: u32, sheet: usize, rows: [usize; 2], cols: [usize; 2]) -> Result<Vec<Vec<String>>, String> {
+async fn sheet_styles(reg: Reg<'_>, doc: u32, sheet: usize) -> Result<engines::sheet::SheetStyles, String> {
+    let d = reg.sheet(doc).ok_or("document is closed")?;
+    reg.scheduler.run(render::PRIO_NEAR, move || d.styles(sheet)).await
+}
+
+#[tauri::command]
+async fn sheet_cells(reg: Reg<'_>, doc: u32, sheet: usize, rows: [usize; 2], cols: [usize; 2]) -> Result<engines::sheet::Cells, String> {
     let d = reg.sheet(doc).ok_or("document is closed")?;
     let (rows, cols) = (rows[0]..rows[1].min(rows[0] + 2000), cols[0]..cols[1].min(cols[0] + 256));
     reg.scheduler.run(render::PRIO_VISIBLE, move || d.cells(sheet, rows, cols)).await
@@ -153,6 +159,27 @@ fn search(reg: Reg<'_>, doc: u32, needle: String, from_page: usize, on_event: Ch
     Ok(())
 }
 
+/// A canonical path without Windows' verbatim prefix, so it reads like the path the user typed.
+fn plain_path(p: &std::path::Path) -> String {
+    let s = p.to_string_lossy().into_owned();
+    if let Some(rest) = s.strip_prefix(r"\\?\UNC\") {
+        return format!(r"\\{rest}");
+    }
+    s.strip_prefix(r"\\?\").map(str::to_owned).unwrap_or(s)
+}
+
+/// Recent files that still exist, resolved through symlinks and without duplicates, in the original order.
+#[tauri::command]
+fn existing_paths(paths: Vec<String>) -> Vec<String> {
+    let mut seen = std::collections::HashSet::new();
+    paths
+        .into_iter()
+        .filter_map(|p| std::fs::canonicalize(p).ok())
+        .map(|p| plain_path(&p))
+        .filter(|p| seen.insert(p.clone()))
+        .collect()
+}
+
 fn path_args(args: impl Iterator<Item = String>, cwd: &std::path::Path) -> Vec<String> {
     args.filter(|a| !a.starts_with('-')).map(|a| cwd.join(a).to_string_lossy().into_owned()).collect()
 }
@@ -169,10 +196,20 @@ fn app_ready(app: tauri::AppHandle, launch: State<Launch>, pending: State<Pendin
     paths
 }
 
+/// The benchmark probe this run was started for, if any (LUMEN_BENCH).
+#[tauri::command]
+fn bench_mode() -> Option<String> {
+    std::env::var("LUMEN_BENCH").ok()
+}
+
 #[tauri::command]
 fn bench_mark(app: tauri::AppHandle, name: String, ms: f64) {
     let Ok(wanted) = std::env::var("LUMEN_BENCH") else { return };
-    println!("{name}_ms={ms:.1}");
+    if name.ends_with("_pct") {
+        println!("{name}={ms:.1}");
+    } else {
+        println!("{name}_ms={ms:.1}");
+    }
     if wanted == name {
         app.exit(0);
     }
@@ -201,6 +238,14 @@ fn handle_protocol(reg: &Arc<Registry>, path: &str, responder: tauri::UriSchemeR
         });
     }
     let Some(doc) = reg.paged(id) else { return responder.respond(not_found()) };
+    if let docs::TileRequest::Svg { page } = request {
+        return reg.scheduler.submit(render::PRIO_VISIBLE, move || {
+            responder.respond(match doc.engine.page_svg(page) {
+                Ok(svg) => respond(StatusCode::OK, "image/svg+xml", svg.into_bytes()),
+                Err(_) => not_found(),
+            })
+        });
+    }
     let Some((prio, job)) = docs::render_request(&doc, request, None) else {
         return responder.respond(respond(StatusCode::NO_CONTENT, "text/plain", Vec::new()));
     };
@@ -260,6 +305,13 @@ pub fn run() {
                 let _ = w.set_focus();
             }
         }))
+        .plugin(
+            // Size and position are remembered between launches; fullscreen isn't, so quitting
+            // during a presentation doesn't reopen Lumen fullscreen.
+            tauri_plugin_window_state::Builder::default()
+                .with_state_flags(tauri_plugin_window_state::StateFlags::all() - tauri_plugin_window_state::StateFlags::FULLSCREEN)
+                .build(),
+        )
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .register_asynchronous_uri_scheme_protocol("lumen", move |_ctx, request, responder| {
@@ -300,7 +352,9 @@ pub fn run() {
         .manage(registry)
         .invoke_handler(tauri::generate_handler![
             app_ready,
+            existing_paths,
             bench_mark,
+            bench_mode,
             open_document,
             office_exact,
             ms_office_available,
@@ -311,6 +365,7 @@ pub fn run() {
             export_pdf,
             sheet_info,
             sheet_cells,
+            sheet_styles,
             set_viewport,
             page_text,
             page_links,
@@ -328,4 +383,32 @@ pub fn run() {
             }
             _ => {}
         });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn verbatim_prefixes_are_removed() {
+        assert_eq!(plain_path(std::path::Path::new(r"\\?\C:\docs\a.pdf")), r"C:\docs\a.pdf");
+        assert_eq!(plain_path(std::path::Path::new(r"\\?\UNC\server\share\a.pdf")), r"\\server\share\a.pdf");
+        assert_eq!(plain_path(std::path::Path::new("/home/a/b.pdf")), "/home/a/b.pdf");
+    }
+
+    #[test]
+    fn missing_and_duplicate_paths_are_dropped() {
+        let dir = std::env::temp_dir().join(format!("lumen-recent-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("a.txt");
+        std::fs::write(&file, b"x").unwrap();
+        let same = dir.join(".").join("a.txt");
+        let kept = existing_paths(vec![
+            file.to_string_lossy().into_owned(),
+            dir.join("gone.txt").to_string_lossy().into_owned(),
+            same.to_string_lossy().into_owned(),
+        ]);
+        assert_eq!(kept.len(), 1);
+        assert!(kept[0].ends_with("a.txt"));
+    }
 }
