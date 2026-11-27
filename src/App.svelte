@@ -90,6 +90,15 @@
     }
   }
 
+  // The presenter hint and cursor show when presenting starts or the mouse moves, then get out of the way.
+  let hintIdle = $state(false);
+  let hintTimer = 0;
+  function wakeHint() {
+    hintIdle = false;
+    clearTimeout(hintTimer);
+    hintTimer = window.setTimeout(() => (hintIdle = true), 2000);
+  }
+
   let savedView: { fit: Fit; zoom: number } | null = null;
   async function present(on: boolean) {
     if (!paged || on === presenting) return;
@@ -101,6 +110,7 @@
       paged.zoom = savedView.zoom;
     }
     presenting = on;
+    if (on) wakeHint();
     await getCurrentWindow().setFullscreen(on).catch(() => {});
   }
 
@@ -591,7 +601,7 @@
 </div>
 
 {#if presenting && paged}
-  <div class="presenter" role="dialog" aria-label="Presentation">
+  <div class="presenter" class:idle={hintIdle} role="dialog" aria-label="Presentation" tabindex="-1" onpointermove={wakeHint}>
     <PagedView state={paged} present onExternalLink={(uri) => (pendingLink = uri)} />
     <div class="presenter-hint">Slide {paged.page + 1} of {paged.pageCount}. Press Esc to exit.</div>
   </div>
@@ -852,8 +862,11 @@
     opacity: 0;
     transition: opacity 200ms ease;
   }
-  .presenter:hover .presenter-hint {
+  .presenter:not(.idle) .presenter-hint {
     opacity: 1;
+  }
+  .presenter.idle {
+    cursor: none;
   }
   .toast {
     position: fixed;

@@ -109,6 +109,15 @@
     return out;
   }
 
+  // Ctrl+Home and Ctrl+End jump to the first and last line; plain Home and End already scroll natively.
+  function onkeydown(e: KeyboardEvent) {
+    if (!(e.ctrlKey || e.metaKey) || (e.target as HTMLElement)?.closest?.("input, textarea")) return;
+    if (e.key === "Home") scroller.scrollTop = 0;
+    else if (e.key === "End") scroller.scrollTop = scroller.scrollHeight;
+    else return;
+    e.preventDefault();
+  }
+
   export function goToLine(line: number) {
     const y = (line * ROW) / ratio - viewH / 3;
     scroller.scrollTop = Math.max(0, y);
@@ -142,6 +151,8 @@
     return () => ro.disconnect();
   });
 </script>
+
+<svelte:window {onkeydown} />
 
 <div class="scroller" bind:this={scroller} onscroll={onScroll} tabindex="-1" role="document" aria-label="File contents">
   <div class="content" style:height="{height}px">

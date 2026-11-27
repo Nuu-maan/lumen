@@ -81,8 +81,8 @@
   }
   .frame {
     position: relative;
-    background-color: #fff;
-    background-image: conic-gradient(#e6e6e6 25%, #fff 0 50%, #e6e6e6 0 75%, #fff 0);
+    background-color: var(--gray-3);
+    background-image: conic-gradient(var(--gray-5) 25%, var(--gray-3) 0 50%, var(--gray-5) 0 75%, var(--gray-3) 0);
     background-size: 16px 16px;
     box-shadow: var(--shadow-page);
   }
