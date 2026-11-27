@@ -56,7 +56,12 @@ def convert(desktop, request):
         if doc.supportsService("com.sun.star.text.TextDocument"):
             doc.setPropertyValue("RedlineDisplayType", 0)
         export = next((f for service, f in FILTERS if doc.supportsService(service)), "writer_pdf_Export")
-        doc.storeToURL(uno.systemPathToFileUrl(request["out"]), (prop("FilterName", export),))
+        args = [prop("FilterName", export)]
+        if request.get("pages") and export == "calc_pdf_Export":
+            # Big sheets print to thousands of pages; only the requested range is exported.
+            data = uno.Any("[]com.sun.star.beans.PropertyValue", (prop("PageRange", request["pages"]),))
+            args.append(prop("FilterData", data))
+        uno.invoke(doc, "storeToURL", (uno.systemPathToFileUrl(request["out"]), tuple(args)))
     finally:
         doc.close(True)
 

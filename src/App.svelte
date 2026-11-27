@@ -28,6 +28,8 @@
   let dragging = $state(false);
   let password = $state("");
   let pendingLink = $state<string | null>(null);
+  // Matches SHEET_PRINT_PAGES in open.rs: a spreadsheet's print layout stops after this many pages.
+  const SHEET_PRINT_PAGES = 100;
   let tabList = $state<HTMLElement>();
   let home = $state("");
 
@@ -436,6 +438,9 @@
             {#key ps.doc}
               <div class="swap swapped"><PagedView bind:this={pagedView} state={ps} onExternalLink={(uri) => (pendingLink = uri)} /></div>
             {/key}
+            {#if ps.pageCount >= SHEET_PRINT_PAGES}
+              <p class="page-limit" role="status">Showing the first {SHEET_PRINT_PAGES} pages. Open the workbook in a spreadsheet app to print all of it.</p>
+            {/if}
             {#if findOpen}
               <FindBar
                 query={ps.query}
@@ -554,7 +559,11 @@
           <span class="badge">{tab.view.status === "converting" ? "Fast preview, rendering exact layout…" : "Fast preview"}</span>
         {:else if sheet}
           {#if sheet.mode === "print" && sheet.converter}
-            <span class="badge" class:exact={sheet.print instanceof PagedState}>{sheet.print === "converting" ? "Rendering print layout…" : converterLabel[sheet.converter]}</span>
+            <span class="badge" class:exact={sheet.print instanceof PagedState}>{sheet.print === "converting"
+                ? "Rendering print layout…"
+                : sheet.print instanceof PagedState
+                  ? converterLabel[sheet.converter]
+                  : "Print layout unavailable"}</span>
           {:else}<span class="badge">{sheet.converter ? "Fast preview (grid)" : "Exact"}</span>{/if}
         {:else if tab.view.kind === "paged"}
           {#if officeEngine && msOffice}
@@ -873,6 +882,21 @@
   }
   .presenter.idle {
     cursor: none;
+  }
+  .page-limit {
+    position: absolute;
+    left: 50%;
+    bottom: 16px;
+    transform: translateX(-50%);
+    max-width: calc(100% - 32px);
+    padding: 6px 12px;
+    border-radius: 999px;
+    background: oklch(20% 0.01 65 / 0.85);
+    color: var(--gray-11);
+    font-size: var(--fs-1);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
   .toast {
     position: fixed;

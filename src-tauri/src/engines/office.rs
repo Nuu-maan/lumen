@@ -250,25 +250,37 @@ impl Office {
     }
 
     pub fn convert_libreoffice(&self, input: &Path, output: &Path, password: Option<&str>, timeout: Duration) -> Result<(), ConvertError> {
+        self.convert_libreoffice_pages(input, output, password, timeout, None)
+    }
+
+    /// Like `convert_libreoffice`, but spreadsheets export only `pages` (a LibreOffice page range like "1-100").
+    pub fn convert_libreoffice_pages(
+        &self,
+        input: &Path,
+        output: &Path,
+        password: Option<&str>,
+        timeout: Duration,
+        pages: Option<&str>,
+    ) -> Result<(), ConvertError> {
         let install = find_libreoffice().ok_or(ConvertError::NotInstalled)?;
         *self.last_used.lock() = Instant::now();
         let mut guard = self.worker.lock();
         for attempt in 0..2 {
             if guard.is_none() && password.is_none() && self.worker_broken.load(Ordering::Relaxed) {
-                return self.convert_cli(&install, input, output, timeout);
+                return self.convert_cli(&install, input, output, timeout, pages);
             }
             if guard.is_none() {
                 match self.start(&install) {
                     Ok(worker) => *guard = Some(worker),
                     Err(_) if password.is_none() => {
                         self.worker_broken.store(true, Ordering::Relaxed);
-                        return self.convert_cli(&install, input, output, timeout);
+                        return self.convert_cli(&install, input, output, timeout, pages);
                     }
                     Err(e) => return Err(e),
                 }
             }
             let worker = guard.as_mut().unwrap();
-            let request = serde_json::json!({ "in": input, "out": output, "password": password }).to_string();
+            let request = serde_json::json!({ "in": input, "out": output, "password": password, "pages": pages }).to_string();
             if writeln!(worker.stdin, "{request}").and_then(|_| worker.stdin.flush()).is_err() {
                 guard.take().unwrap().kill();
                 continue;
@@ -297,12 +309,17 @@ impl Office {
         Err(ConvertError::Failed("LibreOffice stopped unexpectedly".into()))
     }
 
-    fn convert_cli(&self, install: &Install, input: &Path, output: &Path, timeout: Duration) -> Result<(), ConvertError> {
+    fn convert_cli(&self, install: &Install, input: &Path, output: &Path, timeout: Duration, pages: Option<&str>) -> Result<(), ConvertError> {
+        // Spreadsheet page ranges go through the PDF filter's options, which LibreOffice reads as JSON.
+        let format = match pages {
+            Some(range) => format!("pdf:calc_pdf_Export:{}", serde_json::json!({ "PageRange": { "type": "string", "value": range } })),
+            None => "pdf".to_owned(),
+        };
         let out_dir = output.with_extension("lo-out");
         let _ = std::fs::remove_dir_all(&out_dir);
         std::fs::create_dir_all(&out_dir).map_err(|e| ConvertError::Failed(e.to_string()))?;
         let mut child = soffice_command(install, &self.work_dir.join("lo-profile-cli"))
-            .args(["--convert-to", "pdf", "--outdir"])
+            .args(["--convert-to", &format, "--outdir"])
             .arg(&out_dir)
             .arg(input)
             .spawn()
@@ -452,7 +469,11 @@ mod tests {
         assert!(std::fs::read(&out).unwrap().starts_with(b"%PDF"));
         office.shutdown();
         let cli_out = dir.join("in.v2.pdf");
-        office.convert_cli(&find_libreoffice().unwrap(), &input, &cli_out, Duration::from_secs(120)).unwrap();
+        office.convert_cli(&find_libreoffice().unwrap(), &input, &cli_out, Duration::from_secs(120), None).unwrap();
         assert!(std::fs::read(&cli_out).unwrap().starts_with(b"%PDF"));
+        let sheet = Path::new(env!("CARGO_MANIFEST_DIR")).join("../fixtures/numbers.xlsx");
+        let ranged = dir.join("sheet.pdf");
+        office.convert_cli(&find_libreoffice().unwrap(), &sheet, &ranged, Duration::from_secs(120), Some("1-1")).unwrap();
+        assert!(std::fs::read(&ranged).unwrap().starts_with(b"%PDF"));
     }
 }

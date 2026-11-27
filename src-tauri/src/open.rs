@@ -263,9 +263,19 @@ pub fn extract(reg: &Registry, doc: u32, index: usize) -> Result<PathBuf, String
 
 const CONVERT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(60);
 
+/// How many pages of a spreadsheet the print layout shows.
+pub const SHEET_PRINT_PAGES: usize = 100;
+
 pub async fn exact(reg: &Arc<Registry>, path: PathBuf, password: Option<String>, converter: Converter) -> Result<OpenPagedResult, String> {
     let office = reg.office().clone();
     let out_dir = reg.cache_root().join("converted");
+    // A spreadsheet's print layout shows its first pages; all of a 100,000-row sheet would take minutes.
+    let is_sheet = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .and_then(crate::formats::by_ext)
+        .is_some_and(|f| f.family == crate::formats::Family::Spreadsheet);
+    let pages = is_sheet.then(|| format!("1-{SHEET_PRINT_PAGES}"));
     let result = tauri::async_runtime::spawn_blocking(move || {
         let key = office::content_key(&path, converter).map_err(|e| ConvertError::Failed(e.to_string()))?;
         std::fs::create_dir_all(&out_dir).map_err(|e| ConvertError::Failed(e.to_string()))?;
@@ -273,7 +283,7 @@ pub async fn exact(reg: &Arc<Registry>, path: PathBuf, password: Option<String>,
         let partial = out_dir.join(format!("{key}.{}.partial.pdf", std::process::id()));
         let converted = match (converter, password.as_deref()) {
             (Converter::MsOffice, None) => office.convert_ms_office(&path, &partial, CONVERT_TIMEOUT),
-            (_, password) => office.convert_libreoffice(&path, &partial, password, CONVERT_TIMEOUT),
+            (_, password) => office.convert_libreoffice_pages(&path, &partial, password, CONVERT_TIMEOUT, pages.as_deref()),
         };
         converted.and_then(|_| std::fs::rename(&partial, &target).map_err(|e| ConvertError::Failed(e.to_string())))?;
         office::trim_cache(&out_dir);
