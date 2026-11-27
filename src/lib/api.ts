@@ -86,6 +86,20 @@ export interface SheetInfo {
   frozenCols: number;
 }
 
+export interface SheetStyles {
+  /** Merged ranges as [first row, first column, last row, last column]. */
+  merges: [number, number, number, number][];
+  styled: boolean;
+}
+
+export interface CellStyle {
+  r: number;
+  c: number;
+  color?: string;
+  fill?: string;
+  bold?: boolean;
+}
+
 export type Converter = "libreOffice" | "msOffice";
 
 export interface Fast {
@@ -138,8 +152,9 @@ export const api = {
   textLines: (doc: number, start: number, count: number) => invoke<Lines>("text_lines", { doc, start, count }),
   textSearch: (doc: number, needle: string, limit: number) => invoke<[number, number][]>("text_search", { doc, needle, limit }),
   sheetInfo: (doc: number, sheet: number) => invoke<SheetInfo>("sheet_info", { doc, sheet }),
+  sheetStyles: (doc: number, sheet: number) => invoke<SheetStyles>("sheet_styles", { doc, sheet }),
   sheetCells: (doc: number, sheet: number, rows: [number, number], cols: [number, number]) =>
-    invoke<string[][]>("sheet_cells", { doc, sheet, rows, cols }),
+    invoke<{ values: string[][]; styles: CellStyle[] }>("sheet_cells", { doc, sheet, rows, cols }),
   exportPdf: (doc: number, target: string) => invoke<void>("export_pdf", { doc, target }),
   extract: (doc: number, index: number) => invoke<string>("extract_item", { doc, index }),
   outline: (doc: number) => invoke<OutlineItem[]>("outline", { doc }),
