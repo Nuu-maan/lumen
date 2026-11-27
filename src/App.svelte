@@ -621,7 +621,13 @@
         class="btn primary"
         onclick={() => {
           pendingLink = null;
-          void openUrl(link);
+          openUrl(link).catch(async () => {
+            const copied = await navigator.clipboard.writeText(link).then(
+              () => true,
+              () => false,
+            );
+            flash(copied ? "No browser could open the link. The address is copied, so you can paste it." : "No browser could open the link.");
+          });
         }}>Open link</button
       >
     {/snippet}
